@@ -6,9 +6,17 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from cordon.llm import ModelConfig
 from evals.baselines.b0 import run_b0
-from evals.harness import run_harness, write_result_file
+from evals.harness import (
+    BASELINES,
+    _effective_baseline_name,
+    _resolve_baseline,
+    run_harness,
+    write_result_file,
+)
 from evals.scenario import AttackScenario, BenignScenario, GoalPredicate, SeedData
 from tests.fakes import ConstantLLMClient
 
@@ -150,3 +158,41 @@ def test_write_result_file_marks_complete_runs(tmp_path):
     payload = json.loads(path.read_text())
     assert payload["status"] == "complete"
     assert payload["summary"]["complete"] is True
+
+
+def test_all_four_baselines_are_registered_and_resolvable():
+    assert set(BASELINES) == {"b0", "b1", "b2", "b3"}
+    for name in BASELINES:
+        run_fn = _resolve_baseline(name)
+        assert callable(run_fn)
+
+
+def test_resolve_baseline_rejects_unknown_name():
+    with pytest.raises(SystemExit, match="unknown baseline"):
+        _resolve_baseline("b99")
+
+
+def test_run_harness_aggregates_confirm_counts_across_scenarios():
+    tasks = [make_benign_task("b1")]
+    llm = ConstantLLMClient()
+
+    def fake_run_with_confirms(env, user_request, llm):
+        from evals.baselines.b0 import RunResult
+
+        return RunResult(turns=1, confirm_count=2, confirm_approved_count=1)
+
+    summary, benign_results, _ = run_harness(
+        fake_run_with_confirms, llm, "b3", tasks, [], make_cfg()
+    )
+
+    assert summary.total_confirm_count == 2
+    assert summary.total_confirm_approved_count == 1
+    assert benign_results[0].confirm_count == 2
+
+
+def test_effective_baseline_swaps_b3_to_b2_only_with_no_policy_flag():
+    assert _effective_baseline_name("b3", no_policy=True) == "b2"
+    assert _effective_baseline_name("b3", no_policy=False) == "b3"
+    assert _effective_baseline_name("b0", no_policy=True) == "b0"
+    assert _effective_baseline_name("b2", no_policy=True) == "b2"
+

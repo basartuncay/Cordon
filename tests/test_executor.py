@@ -475,6 +475,71 @@ def test_reply_email_to_an_allowlisted_contact_needs_no_confirmation():
     assert len(env.mailbox.sent) == 1
 
 
+def test_enforce_policy_false_bypasses_every_check_ablation_mode():
+    """B2 (Cordon without the policy engine) needs a way to run the same
+    plan/executor pipeline with every check switched off, so the eval
+    harness can measure what the architecture buys beyond the policy
+    engine itself."""
+    env = _attacker_email_env()
+    result = Executor(
+        env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all, enforce_policy=False
+    ).run(_forward_to_sender_plan())
+
+    forward_outcome = result.outcomes[1]
+    assert forward_outcome.status == "executed"
+    assert forward_outcome.rules == []
+    assert len(env.mailbox.sent) == 1
+
+
+def test_enforce_policy_false_still_executes_destructive_actions_without_confirmation():
+    from cordon.tools.base import CalendarEvent
+
+    env = Environment(
+        mailbox=MockMailbox(),
+        calendar=MockCalendar(
+            events=[
+                CalendarEvent(
+                    id="evt1", title="Sync", start="2026-01-06T10:00:00", end="2026-01-06T11:00:00"
+                )
+            ]
+        ),
+    )
+    delete_step = PlanStep(
+        step_id="s1", tool="delete_event", args={"event_id": LiteralArg(value="evt1")}
+    )
+    result = Executor(
+        env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all, enforce_policy=False
+    ).run(Plan(steps=[delete_step]))
+
+    assert result.outcomes[0].status == "executed"
+    assert "evt1" not in env.calendar.events
+
+
+def test_step_outcome_records_the_plain_args_it_was_called_with():
+    env = Environment(
+        mailbox=MockMailbox(contacts=["bob@company.example"]), calendar=MockCalendar()
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="s1",
+                tool="send_email",
+                args={
+                    "to": ListArg(items=[LiteralArg(value="bob@company.example")]),
+                    "subject": LiteralArg(value="hi"),
+                    "body": LiteralArg(value="hi"),
+                },
+            )
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set())).run(plan)
+    assert result.outcomes[0].args == {
+        "to": ["bob@company.example"],
+        "subject": "hi",
+        "body": "hi",
+    }
+
+
 def test_p5_budget_denies_side_effects_beyond_the_cap():
     env = Environment(
         mailbox=MockMailbox(contacts=["bob@company.example"]), calendar=MockCalendar()

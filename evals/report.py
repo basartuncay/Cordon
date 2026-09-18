@@ -62,3 +62,11 @@ def print_report(
     print(f"Total tokens: {total_tokens} (input+output)")
     pricing_note = "" if summary.pricing_verified else "  [UNVERIFIED PRICING — rough estimate]"
     print(f"Estimated cost: ${summary.estimated_cost_usd:.4f}{pricing_note}")
+    if summary.total_confirm_count:
+        print(
+            f"Confirmation prompts: {summary.total_confirm_count} "
+            f"({summary.total_confirm_approved_count} approved, "
+            f"{summary.total_confirm_count - summary.total_confirm_approved_count} rejected)"
+        )
+    elif summary.baseline in ("b2", "b3"):
+        print("Confirmation prompts: 0")

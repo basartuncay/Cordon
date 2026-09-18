@@ -80,6 +80,7 @@ class StepOutcome:
     rules: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     result: Any = None
+    args: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -170,6 +171,7 @@ class Executor:
         confirm: ConfirmDecider | None = None,
         quarantine: QuarantineFn | None = None,
         confirm_log: ConfirmLog | None = None,
+        enforce_policy: bool = True,
     ) -> None:
         self.env = env
         self.policy_cfg = policy_cfg
@@ -177,6 +179,7 @@ class Executor:
         self._quarantine = quarantine
         self._confirm_log = confirm_log
         self._policy_state = PolicyState()
+        self.enforce_policy = enforce_policy
 
     def run(self, plan: Plan) -> ExecutionResult:
         result = ExecutionResult()
@@ -198,7 +201,20 @@ class Executor:
         if step.tool in READ_TOOLS:
             raw = call_tool(self.env, step.tool, plain_args)
             exec_result.step_outputs[step.step_id] = _wrap_read_result(step.tool, raw)
-            return StepOutcome(step_id=step.step_id, tool=step.tool, status="executed", result=raw)
+            return StepOutcome(
+                step_id=step.step_id, tool=step.tool, status="executed", result=raw, args=plain_args
+            )
+
+        if not self.enforce_policy:
+            # B2 ablation: run the same plan/executor pipeline with every
+            # policy check switched off, to isolate what the policy engine
+            # itself buys beyond the rest of the architecture.
+            raw = call_tool(self.env, step.tool, plain_args)
+            self._bump_side_effect_counters(step.tool)
+            exec_result.step_outputs[step.step_id] = Tainted(raw, LITERAL_PROVENANCE)
+            return StepOutcome(
+                step.step_id, step.tool, "executed", result=raw, args=plain_args
+            )
 
         recipients = self._extract_recipients(step.tool, plain_args, tainted_args)
         contents = self._extract_contents(step.tool, plain_args, tainted_args)
@@ -216,7 +232,9 @@ class Executor:
         )
 
         if verdict.decision == Decision.DENY:
-            return StepOutcome(step.step_id, step.tool, "denied", verdict.rules, verdict.reasons)
+            return StepOutcome(
+                step.step_id, step.tool, "denied", verdict.rules, verdict.reasons, args=plain_args
+            )
 
         if verdict.decision == Decision.CONFIRM:
             request = ConfirmRequest(
@@ -231,22 +249,36 @@ class Executor:
                 self._confirm_log.record(request, approved)
             if not approved:
                 return StepOutcome(
-                    step.step_id, step.tool, "confirm_rejected", verdict.rules, verdict.reasons
+                    step.step_id,
+                    step.tool,
+                    "confirm_rejected",
+                    verdict.rules,
+                    verdict.reasons,
+                    args=plain_args,
                 )
 
         raw = call_tool(self.env, step.tool, plain_args)
-        self._policy_state.side_effect_count += 1
-        if step.tool in EMAIL_TOOLS:
-            self._policy_state.email_count += 1
-        if step.tool in CALENDAR_CLASS_TOOLS:
-            self._policy_state.calendar_count += 1
-        if step.tool in DESTRUCTIVE_TOOLS:
-            self._policy_state.destructive_count += 1
+        self._bump_side_effect_counters(step.tool)
         exec_result.step_outputs[step.step_id] = Tainted(raw, LITERAL_PROVENANCE)
         status = "confirm_approved" if verdict.decision == Decision.CONFIRM else "executed"
         return StepOutcome(
-            step.step_id, step.tool, status, verdict.rules, verdict.reasons, result=raw
+            step.step_id,
+            step.tool,
+            status,
+            verdict.rules,
+            verdict.reasons,
+            result=raw,
+            args=plain_args,
         )
+
+    def _bump_side_effect_counters(self, tool: str) -> None:
+        self._policy_state.side_effect_count += 1
+        if tool in EMAIL_TOOLS:
+            self._policy_state.email_count += 1
+        if tool in CALENDAR_CLASS_TOOLS:
+            self._policy_state.calendar_count += 1
+        if tool in DESTRUCTIVE_TOOLS:
+            self._policy_state.destructive_count += 1
 
     def _run_quarantine_step(self, step: PlanStep, exec_result: ExecutionResult) -> StepOutcome:
         if self._quarantine is None:

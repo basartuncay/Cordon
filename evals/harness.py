@@ -43,6 +43,9 @@ RESULTS_DIR = Path(__file__).parent / "results"
 
 BASELINES = {
     "b0": "evals.baselines.b0:run_b0",
+    "b1": "evals.baselines.b1:run_b1",
+    "b2": "evals.baselines.cordon_runner:run_b2",
+    "b3": "evals.baselines.cordon_runner:run_b3",
 }
 
 StopReason = Literal["limit_reached", "token_budget_exceeded", "usd_budget_exceeded"] | None
@@ -56,6 +59,8 @@ class ScenarioResult:
     tool_calls: list[tuple[str, dict]] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    confirm_count: int = 0
+    confirm_approved_count: int = 0
 
 
 @dataclass
@@ -71,6 +76,8 @@ class RunSummary:
     total_output_tokens: int
     estimated_cost_usd: float
     pricing_verified: bool
+    total_confirm_count: int = 0
+    total_confirm_approved_count: int = 0
 
 
 def _resolve_baseline(name: str):
@@ -79,6 +86,13 @@ def _resolve_baseline(name: str):
     module_name, func_name = BASELINES[name].split(":")
     module = importlib.import_module(module_name)
     return getattr(module, func_name)
+
+
+def _effective_baseline_name(baseline: str, no_policy: bool) -> str:
+    """--no-policy only ever affects b3 (it becomes the b2 ablation);
+    every other baseline is unaffected since only b2/b3 have a policy
+    engine to switch off in the first place."""
+    return "b2" if (no_policy and baseline == "b3") else baseline
 
 
 def run_scenario(
@@ -100,6 +114,8 @@ def run_scenario(
         tool_calls=result.tool_calls,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
+        confirm_count=result.confirm_count,
+        confirm_approved_count=result.confirm_approved_count,
     )
 
 
@@ -161,6 +177,10 @@ def run_harness(
         ),
         estimated_cost_usd=cost_so_far,
         pricing_verified=cfg.pricing_verified,
+        total_confirm_count=sum(r.confirm_count for r in benign_results + attack_results),
+        total_confirm_approved_count=sum(
+            r.confirm_approved_count for r in benign_results + attack_results
+        ),
     )
     return summary, benign_results, attack_results
 
@@ -201,9 +221,15 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="stop the run once estimated spend reaches this many USD (rough estimate)",
     )
+    parser.add_argument(
+        "--no-policy",
+        action="store_true",
+        help="for --baseline b3, run without policy enforcement (equivalent to b2)",
+    )
     args = parser.parse_args(argv)
 
-    run_fn = _resolve_baseline(args.baseline)
+    effective_baseline = _effective_baseline_name(args.baseline, args.no_policy)
+    run_fn = _resolve_baseline(effective_baseline)
     cfg = default_model_config()
 
     try:
@@ -219,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     summary, benign_results, attack_results = run_harness(
         run_fn,
         llm,
-        args.baseline,
+        effective_baseline,
         tasks,
         attacks,
         cfg,
