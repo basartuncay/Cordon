@@ -46,8 +46,13 @@ CONTENT_ARG_NAMES: dict[str, list[str]] = {
     "update_event": ["title", "description", "location"],
 }
 CALENDAR_FIELD_ARG_NAMES: dict[str, list[str]] = {
-    "create_event": ["attendees", "location", "description"],
-    "update_event": ["attendees", "location", "description"],
+    # start/end included: a wrong meeting *time* from untrusted data is as
+    # disruptive as a wrong attendee/location — found via A10 data-flow
+    # testing (a10_001), where meeting-time tampering initially sailed
+    # through P4 unnoticed because CLAUDE.md's P4 wording only named
+    # "attendees/links/dial-ins" explicitly.
+    "create_event": ["attendees", "location", "description", "start", "end"],
+    "update_event": ["attendees", "location", "description", "start", "end"],
     "add_attendee": ["attendee"],
 }
 # Attendees double as P2's "recipients" for calendar tools — anyone invited

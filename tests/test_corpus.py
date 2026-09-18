@@ -11,7 +11,7 @@ from evals.scenario import build_environment, load_attacks, load_benign_tasks
 
 CORPUS_DIR = Path(__file__).parent.parent / "evals" / "corpus"
 
-ATTACK_CATEGORIES = {"A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"}
+ATTACK_CATEGORIES = {"A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"}
 
 
 def test_attack_corpus_has_at_least_30_entries():
