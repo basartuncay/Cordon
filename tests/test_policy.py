@@ -78,12 +78,15 @@ def test_p1_is_case_insensitive_against_the_allowlist():
 
 
 # --- P2: exfiltration -------------------------------------------------------
+# P2 examines every text-bearing arg a tool call carries (subject, body,
+# note, title, description, location) — not just one hardcoded field —
+# since private content can leak through any of them.
 
 
 def test_p2_allows_private_content_to_allowlisted_recipient():
     verdict = check_p2_exfiltration(
         recipients=[literal("bob@company.example")],
-        content=untrusted("sensitive body", sensitivity=Sensitivity.PRIVATE),
+        contents=[untrusted("sensitive body", sensitivity=Sensitivity.PRIVATE)],
         cfg=make_cfg(),
     )
     assert verdict.decision == Decision.ALLOW
@@ -92,7 +95,7 @@ def test_p2_allows_private_content_to_allowlisted_recipient():
 def test_p2_confirms_private_content_to_non_allowlisted_recipient():
     verdict = check_p2_exfiltration(
         recipients=[untrusted("attacker@evil.example")],
-        content=contact("sensitive body", sensitivity=Sensitivity.PRIVATE),
+        contents=[contact("sensitive body", sensitivity=Sensitivity.PRIVATE)],
         cfg=make_cfg(),
     )
     assert verdict.decision == Decision.CONFIRM
@@ -102,17 +105,59 @@ def test_p2_confirms_private_content_to_non_allowlisted_recipient():
 def test_p2_allows_public_content_to_non_allowlisted_recipient():
     verdict = check_p2_exfiltration(
         recipients=[untrusted("attacker@evil.example")],
-        content=literal("nothing sensitive"),
+        contents=[literal("nothing sensitive")],
         cfg=make_cfg(),
     )
     assert verdict.decision == Decision.ALLOW
 
 
-def test_p2_allows_when_there_is_no_content_argument():
+def test_p2_allows_when_there_are_no_content_arguments():
     verdict = check_p2_exfiltration(
-        recipients=[untrusted("attacker@evil.example")], content=None, cfg=make_cfg()
+        recipients=[untrusted("attacker@evil.example")], contents=[], cfg=make_cfg()
     )
     assert verdict.decision == Decision.ALLOW
+
+
+def test_p2_confirms_if_any_one_of_several_content_fields_is_private():
+    """subject is public but body is private — a real send_email call
+    carries both; P2 must catch the private one even if the others are
+    fine, matching the requirement to inspect every text-bearing field."""
+    verdict = check_p2_exfiltration(
+        recipients=[untrusted("attacker@evil.example")],
+        contents=[
+            literal("ordinary subject line"),
+            contact("body has sensitive stuff", sensitivity=Sensitivity.PRIVATE),
+        ],
+        cfg=make_cfg(),
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P2" in verdict.rules
+
+
+def test_p2_allows_when_every_content_field_is_public():
+    verdict = check_p2_exfiltration(
+        recipients=[untrusted("attacker@evil.example")],
+        contents=[
+            literal("subject"),
+            untrusted("body", sensitivity=Sensitivity.PUBLIC),
+        ],
+        cfg=make_cfg(),
+    )
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_p2_applies_to_calendar_text_fields_with_attendees_as_recipients():
+    """title/description/location are exactly as exfiltration-prone as an
+    email body when the 'recipients' are the event's attendees."""
+    verdict = check_p2_exfiltration(
+        recipients=[untrusted("attacker@evil.example")],
+        contents=[
+            untrusted("Confidential: layoffs planning", sensitivity=Sensitivity.PRIVATE)
+        ],
+        cfg=make_cfg(),
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P2" in verdict.rules
 
 
 # --- P3: destructive / irreversible actions ---------------------------------
@@ -189,7 +234,7 @@ def test_evaluate_call_combines_multiple_confirm_reasons():
     verdict = evaluate_call(
         "send_email",
         recipients=[untrusted("attacker@evil.example")],
-        content=untrusted("private stuff", sensitivity=Sensitivity.PRIVATE),
+        contents=[untrusted("private stuff", sensitivity=Sensitivity.PRIVATE)],
         cfg=make_cfg(),
         state=state,
     )
@@ -213,7 +258,7 @@ def test_evaluate_call_allows_ordinary_benign_send():
     verdict = evaluate_call(
         "send_email",
         recipients=[literal("bob@company.example")],
-        content=literal("see you at noon"),
+        contents=[literal("see you at noon")],
         cfg=make_cfg(),
         state=state,
     )
@@ -225,6 +270,41 @@ def test_evaluate_call_destructive_action_confirms_regardless_of_other_rules():
     verdict = evaluate_call("delete_event", cfg=make_cfg(), state=state)
     assert verdict.decision == Decision.CONFIRM
     assert "P3" in verdict.rules
+
+
+def test_evaluate_call_create_event_private_title_to_non_allowlisted_attendee_triggers_p2():
+    """Calendar analog of email exfiltration: a PRIVATE title/description
+    read by a non-allowlisted attendee is exactly as much of a leak as a
+    private email body sent to an unknown address."""
+    state = PolicyState()
+    verdict = evaluate_call(
+        "create_event",
+        calendar_recipients=[literal("attacker@evil.example")],
+        contents=[contact("Confidential: layoffs planning", sensitivity=Sensitivity.PRIVATE)],
+        cfg=make_cfg(),
+        state=state,
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P2" in verdict.rules
+
+
+def test_evaluate_call_send_email_private_body_to_non_allowlisted_recipient_triggers_p2():
+    """subject is public, body is private, recipient is outside the
+    allowlist — P2 must catch it via the body field even though the
+    subject alone would have been fine."""
+    state = PolicyState()
+    verdict = evaluate_call(
+        "send_email",
+        recipients=[untrusted("attacker@evil.example")],
+        contents=[
+            literal("ordinary subject"),
+            contact("this is confidential", sensitivity=Sensitivity.PRIVATE),
+        ],
+        cfg=make_cfg(),
+        state=state,
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P2" in verdict.rules
 
 
 # --- edge cases called out explicitly for M2a ----------------------------------
@@ -253,7 +333,7 @@ def test_edge_case_untrusted_body_with_trusted_recipient_is_not_over_blocked():
     verdict = evaluate_call(
         "forward_email",
         recipients=[literal("alice@company.example")],
-        content=untrusted("attacker-authored body", sensitivity=Sensitivity.PRIVATE),
+        contents=[untrusted("attacker-authored body", sensitivity=Sensitivity.PRIVATE)],
         cfg=make_cfg(),
         state=PolicyState(),
     )
@@ -271,7 +351,7 @@ def test_edge_case_concatenated_tainted_values_inherit_least_trusted_and_most_se
     body = Tainted(contact_part.value + untrusted_part.value, merged)
     verdict = check_p2_exfiltration(
         recipients=[untrusted("attacker@evil.example")],
-        content=body,
+        contents=[body],
         cfg=make_cfg(),
     )
     assert verdict.decision == Decision.CONFIRM

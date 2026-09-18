@@ -26,6 +26,14 @@ KNOWN_TOOLS = {schema["name"] for schema in TOOL_SCHEMAS}
 # quarantine can narrow a value's shape but never launder its trust.
 QUARANTINE_TOOL = "quarantine_extract"
 
+# Pseudo-tool: string-joins a "parts" ListArg of literals/refs. Lets the
+# planner build message text out of pieces it will only see the shape of
+# (never the untrusted content) — the executor concatenates the resolved
+# values and tags the result with Tainted.combine() of every part, so the
+# result is exactly as trusted/sensitive as its least-trusted, most-
+# sensitive ingredient.
+TEMPLATE_TOOL = "template"
+
 
 class LiteralArg(BaseModel):
     kind: Literal["literal"] = "literal"
@@ -55,7 +63,7 @@ class PlanStep(BaseModel):
     @field_validator("tool")
     @classmethod
     def _tool_must_be_known(cls, v: str) -> str:
-        if v not in KNOWN_TOOLS and v != QUARANTINE_TOOL:
+        if v not in KNOWN_TOOLS and v not in (QUARANTINE_TOOL, TEMPLATE_TOOL):
             raise ValueError(f"unknown tool: {v!r}")
         return v
 

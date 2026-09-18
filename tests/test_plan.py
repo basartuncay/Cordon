@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cordon.plan import ListArg, LiteralArg, Plan, PlanStep, RefArg
+from cordon.plan import TEMPLATE_TOOL, ListArg, LiteralArg, Plan, PlanStep, RefArg
 
 
 def test_valid_plan_with_literal_and_ref_args():
@@ -123,3 +123,39 @@ def test_valid_plan_with_list_arg_of_mixed_literal_and_ref():
         ]
     )
     assert len(plan.steps) == 2
+
+
+def test_template_step_with_mixed_literal_and_ref_parts_is_valid():
+    plan = Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool=TEMPLATE_TOOL,
+                args={
+                    "parts": ListArg(
+                        items=[
+                            LiteralArg(value="Hi "),
+                            RefArg(step_id="s1", path="sender"),
+                            LiteralArg(value=", thanks!"),
+                        ]
+                    )
+                },
+            ),
+        ]
+    )
+    assert len(plan.steps) == 2
+
+
+def test_template_step_ref_to_a_later_step_is_rejected():
+    with pytest.raises(ValidationError, match="has not run yet"):
+        Plan(
+            steps=[
+                PlanStep(
+                    step_id="s1",
+                    tool=TEMPLATE_TOOL,
+                    args={"parts": ListArg(items=[RefArg(step_id="s2", path="sender")])},
+                ),
+                PlanStep(step_id="s2", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            ]
+        )

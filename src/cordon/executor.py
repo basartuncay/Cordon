@@ -16,32 +16,59 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from cordon.confirm import AutoDenyDecider, ConfirmDecider, ConfirmLog, ConfirmRequest
 from cordon.env import Environment
-from cordon.plan import QUARANTINE_TOOL, ListArg, LiteralArg, Plan, PlanStep, RefArg
-from cordon.policy import Decision, PolicyConfig, PolicyState, evaluate_call
+from cordon.plan import QUARANTINE_TOOL, TEMPLATE_TOOL, ListArg, LiteralArg, Plan, PlanStep, RefArg
+from cordon.policy import (
+    CALENDAR_CLASS_TOOLS,
+    DESTRUCTIVE_TOOLS,
+    EMAIL_TOOLS,
+    Decision,
+    PolicyConfig,
+    PolicyState,
+    evaluate_call,
+)
 from cordon.provenance import LITERAL_PROVENANCE, Provenance, Sensitivity, Tainted, TrustLevel
 from cordon.tools.dispatch import call_tool
 
 READ_TOOLS = {"list_emails", "get_email", "search_emails", "list_events", "get_event"}
 
 RECIPIENT_ARG_NAMES: dict[str, str] = {"send_email": "to", "forward_email": "to"}
-CONTENT_ARG_NAMES: dict[str, str] = {
-    "send_email": "body",
-    "forward_email": "note",
-    "reply_email": "body",
+# Every text-bearing arg P2 (exfiltration) must inspect, per tool. forward_email
+# additionally carries the *original* email's subject/body — see
+# _extract_contents, since that's what actually gets forwarded, not just `note`.
+CONTENT_ARG_NAMES: dict[str, list[str]] = {
+    "send_email": ["subject", "body"],
+    "forward_email": ["note"],
+    "reply_email": ["body"],
+    "create_event": ["title", "description", "location"],
+    "update_event": ["title", "description", "location"],
 }
 CALENDAR_FIELD_ARG_NAMES: dict[str, list[str]] = {
     "create_event": ["attendees", "location", "description"],
     "update_event": ["attendees", "location", "description"],
     "add_attendee": ["attendee"],
 }
+# Attendees double as P2's "recipients" for calendar tools — anyone invited
+# can read the title/description/location, which is the calendar analog of
+# an email recipient for exfiltration purposes (but NOT for P1: P1 is
+# email-specific per CLAUDE.md, calendar attendee provenance is P4's job).
+CALENDAR_ATTENDEE_ARG_NAMES: dict[str, str] = {
+    "create_event": "attendees",
+    "update_event": "attendees",
+    "add_attendee": "attendee",
+}
 
-ConfirmCallback = Callable[[str, list[str]], bool]  # (tool, reasons) -> approved?
 QuarantineFn = Callable[[Any], Any]  # (untrusted value) -> extracted plain value
 
 
-def _deny_all(_tool: str, _reasons: list[str]) -> bool:
-    return False
+def _summarize_value(value: Any) -> str:
+    if isinstance(value, Tainted):
+        prov = value.provenance
+        return f"{value.value!r} (trust={prov.trust}, sensitivity={prov.sensitivity})"
+    if isinstance(value, list):
+        return "[" + ", ".join(_summarize_value(v) for v in value) + "]"
+    return repr(value)
 
 
 @dataclass
@@ -139,13 +166,15 @@ class Executor:
         self,
         env: Environment,
         policy_cfg: PolicyConfig,
-        confirm: ConfirmCallback | None = None,
+        confirm: ConfirmDecider | None = None,
         quarantine: QuarantineFn | None = None,
+        confirm_log: ConfirmLog | None = None,
     ) -> None:
         self.env = env
         self.policy_cfg = policy_cfg
-        self._confirm = confirm or _deny_all
+        self._confirm = confirm or AutoDenyDecider()
         self._quarantine = quarantine
+        self._confirm_log = confirm_log
         self._policy_state = PolicyState()
 
     def run(self, plan: Plan) -> ExecutionResult:
@@ -157,6 +186,8 @@ class Executor:
     def _run_step(self, step: PlanStep, exec_result: ExecutionResult) -> StepOutcome:
         if step.tool == QUARANTINE_TOOL:
             return self._run_quarantine_step(step, exec_result)
+        if step.tool == TEMPLATE_TOOL:
+            return self._run_template_step(step, exec_result)
 
         tainted_args: dict[str, Any] = {
             name: _resolve_value(exec_result.step_outputs, arg) for name, arg in step.args.items()
@@ -169,13 +200,15 @@ class Executor:
             return StepOutcome(step_id=step.step_id, tool=step.tool, status="executed", result=raw)
 
         recipients = self._extract_recipients(step.tool, plain_args, tainted_args)
-        content = self._extract_content(step.tool, tainted_args)
+        contents = self._extract_contents(step.tool, plain_args, tainted_args)
         calendar_fields = self._extract_calendar_fields(step.tool, tainted_args)
+        calendar_recipients = self._extract_calendar_recipients(step.tool, tainted_args)
 
         verdict = evaluate_call(
             step.tool,
             recipients=recipients,
-            content=content,
+            contents=contents,
+            calendar_recipients=calendar_recipients,
             calendar_fields=calendar_fields,
             cfg=self.policy_cfg,
             state=self._policy_state,
@@ -185,7 +218,16 @@ class Executor:
             return StepOutcome(step.step_id, step.tool, "denied", verdict.rules, verdict.reasons)
 
         if verdict.decision == Decision.CONFIRM:
-            approved = self._confirm(step.tool, verdict.reasons)
+            request = ConfirmRequest(
+                tool=step.tool,
+                step_id=step.step_id,
+                rules=verdict.rules,
+                reasons=verdict.reasons,
+                argument_summary={name: _summarize_value(v) for name, v in tainted_args.items()},
+            )
+            approved = self._confirm.decide(request)
+            if self._confirm_log is not None:
+                self._confirm_log.record(request, approved)
             if not approved:
                 return StepOutcome(
                     step.step_id, step.tool, "confirm_rejected", verdict.rules, verdict.reasons
@@ -193,6 +235,12 @@ class Executor:
 
         raw = call_tool(self.env, step.tool, plain_args)
         self._policy_state.side_effect_count += 1
+        if step.tool in EMAIL_TOOLS:
+            self._policy_state.email_count += 1
+        if step.tool in CALENDAR_CLASS_TOOLS:
+            self._policy_state.calendar_count += 1
+        if step.tool in DESTRUCTIVE_TOOLS:
+            self._policy_state.destructive_count += 1
         exec_result.step_outputs[step.step_id] = Tainted(raw, LITERAL_PROVENANCE)
         status = "confirm_approved" if verdict.decision == Decision.CONFIRM else "executed"
         return StepOutcome(
@@ -212,6 +260,20 @@ class Executor:
         exec_result.step_outputs[step.step_id] = tainted_output
         return StepOutcome(step.step_id, step.tool, "executed", result=extracted)
 
+    def _run_template_step(self, step: PlanStep, exec_result: ExecutionResult) -> StepOutcome:
+        parts_arg = step.args.get("parts")
+        if not isinstance(parts_arg, ListArg):
+            raise TypeError("template requires a 'parts' ListArg")
+        resolved = [_resolve_value(exec_result.step_outputs, item) for item in parts_arg.items]
+        for r in resolved:
+            if not isinstance(r, Tainted):
+                raise TypeError("template 'parts' items must each resolve to a scalar")
+        text = "".join(str(r.value) for r in resolved)
+        provenance = Tainted.combine(*resolved) if resolved else LITERAL_PROVENANCE
+        tainted_output = Tainted(text, provenance)
+        exec_result.step_outputs[step.step_id] = tainted_output
+        return StepOutcome(step.step_id, step.tool, "executed", result=text)
+
     def _extract_recipients(
         self, tool: str, plain_args: dict[str, Any], tainted_args: dict[str, Any]
     ) -> list[Tainted[str]]:
@@ -229,12 +291,26 @@ class Executor:
             return [Tainted(original.sender, prov)]
         return []
 
-    def _extract_content(self, tool: str, tainted_args: dict[str, Any]) -> Tainted[str] | None:
-        arg_name = CONTENT_ARG_NAMES.get(tool)
-        if arg_name is None:
-            return None
-        value = tainted_args.get(arg_name)
-        return value if isinstance(value, Tainted) else None
+    def _extract_contents(
+        self, tool: str, plain_args: dict[str, Any], tainted_args: dict[str, Any]
+    ) -> list[Tainted[Any]]:
+        contents: list[Tainted[Any]] = []
+        for name in CONTENT_ARG_NAMES.get(tool, []):
+            value = tainted_args.get(name)
+            if isinstance(value, Tainted):
+                contents.append(value)
+        if tool == "forward_email":
+            # The actual outgoing message is the original subject/body plus
+            # the note, not just the note — P2 must see all of it.
+            original = self.env.mailbox.get_email(plain_args["email_id"])
+            prov = Provenance(
+                source_id=f"email:{original.id}",
+                trust=original.sender_trust,
+                sensitivity=original.sensitivity,
+            )
+            contents.append(Tainted(original.subject, prov))
+            contents.append(Tainted(original.body, prov))
+        return contents
 
     def _extract_calendar_fields(
         self, tool: str, tainted_args: dict[str, Any]
@@ -249,3 +325,14 @@ class Executor:
             else:
                 fields.append(value)
         return fields
+
+    def _extract_calendar_recipients(
+        self, tool: str, tainted_args: dict[str, Any]
+    ) -> list[Tainted[str]]:
+        arg_name = CALENDAR_ATTENDEE_ARG_NAMES.get(tool)
+        if arg_name is None:
+            return []
+        value = tainted_args.get(arg_name)
+        if value is None:
+            return []
+        return value if isinstance(value, list) else [value]

@@ -16,9 +16,10 @@ from typing import Any
 
 import pytest
 
+from cordon.confirm import AutoApproveDecider, AutoDenyDecider, ConfirmLog
 from cordon.env import Environment
 from cordon.executor import Executor
-from cordon.plan import QUARANTINE_TOOL, ListArg, LiteralArg, Plan, PlanStep, RefArg
+from cordon.plan import QUARANTINE_TOOL, TEMPLATE_TOOL, ListArg, LiteralArg, Plan, PlanStep, RefArg
 from cordon.policy import PolicyConfig
 from cordon.tools.base import Email
 from cordon.tools.mock_calendar import MockCalendar
@@ -28,13 +29,8 @@ from evals.scenario import build_environment, load_attacks, load_benign_tasks
 
 CORPUS_DIR = Path(__file__).parent.parent / "evals" / "corpus"
 
-
-def approve_all(_tool: str, _reasons: list[str]) -> bool:
-    return True
-
-
-def deny_all(_tool: str, _reasons: list[str]) -> bool:
-    return False
+approve_all = AutoApproveDecider()
+deny_all = AutoDenyDecider()
 
 
 # --- unit-level executor mechanics ------------------------------------------
@@ -154,6 +150,103 @@ def test_quarantine_step_without_configured_function_raises():
         executor.run(plan)
 
 
+def test_template_step_concatenates_parts_and_combines_their_provenance():
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="attacker@evil.example",
+                    sender_trust="unknown",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="Bob",
+                    sensitivity="public",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ]
+        ),
+        calendar=MockCalendar(),
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool=TEMPLATE_TOOL,
+                args={
+                    "parts": ListArg(
+                        items=[
+                            LiteralArg(value="Hi "),
+                            RefArg(step_id="s1", path="body"),
+                            LiteralArg(value=", thanks!"),
+                        ]
+                    )
+                },
+            ),
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set())).run(plan)
+
+    template_outcome = result.outcomes[1]
+    assert template_outcome.status == "executed"
+    templated = result.step_outputs["s2"]
+    assert templated.value == "Hi Bob, thanks!"
+    # Least-trusted of a literal (USER) and the untrusted email body: UNKNOWN.
+    assert templated.provenance.trust == "unknown"
+
+
+def test_template_step_feeding_into_send_email_is_gated_by_p2_when_private():
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="alice@company.example",
+                    sender_trust="contact",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="the layoffs list is confidential",
+                    sensitivity="private",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ]
+        ),
+        calendar=MockCalendar(),
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool=TEMPLATE_TOOL,
+                args={
+                    "parts": ListArg(
+                        items=[LiteralArg(value="FYI: "), RefArg(step_id="s1", path="body")]
+                    )
+                },
+            ),
+            PlanStep(
+                step_id="s3",
+                tool="send_email",
+                args={
+                    "to": ListArg(items=[LiteralArg(value="outsider@partner.example")]),
+                    "subject": LiteralArg(value="fyi"),
+                    "body": RefArg(step_id="s2", path=""),
+                },
+            ),
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all).run(plan)
+
+    send_outcome = result.outcomes[-1]
+    assert send_outcome.status == "confirm_rejected"
+    assert "P2" in send_outcome.rules
+    assert len(env.mailbox.sent) == 0
+
+
 def _attacker_email_env():
     return Environment(
         mailbox=MockMailbox(
@@ -209,6 +302,102 @@ def test_confirm_callback_approval_lets_a_flagged_call_execute():
     assert len(env.mailbox.sent) == 1
 
 
+def test_confirm_request_carries_rules_reasons_and_argument_summary():
+    env = _attacker_email_env()
+    log = ConfirmLog()
+    Executor(
+        env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all, confirm_log=log
+    ).run(_forward_to_sender_plan())
+
+    assert log.confirm_count == 1
+    request = log.records[0].request
+    assert request.tool == "forward_email"
+    assert request.step_id == "s2"
+    assert "P1" in request.rules
+    assert any("attacker@evil.example" in reason for reason in request.reasons)
+    assert "to" in request.argument_summary
+    assert "attacker@evil.example" in request.argument_summary["to"]
+    assert "unknown" in request.argument_summary["to"]
+
+
+def test_confirm_log_tracks_approved_and_rejected_counts_across_a_plan():
+    env = _attacker_email_env()
+    log = ConfirmLog()
+    Executor(
+        env, PolicyConfig(contacts_allowlist=set()), confirm=approve_all, confirm_log=log
+    ).run(_forward_to_sender_plan())
+
+    assert log.confirm_count == 1
+    assert log.approved_count == 1
+    assert log.rejected_count == 0
+
+
+def test_no_confirm_log_means_decisions_are_simply_not_recorded():
+    env = _attacker_email_env()
+    result = Executor(env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all).run(
+        _forward_to_sender_plan()
+    )
+    assert result.outcomes[1].status == "confirm_rejected"
+
+
+def _reply_plan() -> Plan:
+    return Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool="reply_email",
+                args={
+                    "email_id": RefArg(step_id="s1", path="id"),
+                    "body": LiteralArg(value="thanks, noted"),
+                },
+            ),
+        ]
+    )
+
+
+def test_reply_email_recipient_is_derived_from_original_sender_with_its_provenance():
+    """The recipient isn't a plan arg at all for reply_email — the
+    executor must derive it from env ground truth (the original sender)
+    and carry that sender's own trust level, not assume it's safe just
+    because it's 'only a reply'."""
+    env = _attacker_email_env()
+    plan = _reply_plan()
+
+    rejected = Executor(env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all).run(plan)
+    reply_outcome = rejected.outcomes[1]
+    assert reply_outcome.status == "confirm_rejected"
+    assert "P1" in reply_outcome.rules
+    assert len(env.mailbox.sent) == 0
+
+
+def test_reply_email_to_an_allowlisted_contact_needs_no_confirmation():
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="alice@company.example",
+                    sender_trust="contact",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="hi",
+                    sensitivity="private",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ],
+            contacts=["alice@company.example"],
+        ),
+        calendar=MockCalendar(),
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist={"alice@company.example"})).run(
+        _reply_plan()
+    )
+    assert result.outcomes[1].status == "executed"
+    assert len(env.mailbox.sent) == 1
+
+
 def test_p5_budget_denies_side_effects_beyond_the_cap():
     env = Environment(
         mailbox=MockMailbox(contacts=["bob@company.example"]), calendar=MockCalendar()
@@ -231,6 +420,86 @@ def test_p5_budget_denies_side_effects_beyond_the_cap():
     statuses = [o.status for o in result.outcomes]
     assert statuses == ["executed", "executed", "denied"]
     assert len(env.mailbox.sent) == 2
+
+
+def test_p5_email_class_budget_denies_independently_of_the_overall_cap():
+    """max_side_effects is generous but max_email_side_effects=1 caps
+    emails specifically; a calendar action right after must still go
+    through, proving the counters are tracked per tool-class."""
+    env = Environment(
+        mailbox=MockMailbox(contacts=["bob@company.example"]), calendar=MockCalendar()
+    )
+    steps = [
+        PlanStep(
+            step_id="s0",
+            tool="send_email",
+            args={
+                "to": ListArg(items=[LiteralArg(value="bob@company.example")]),
+                "subject": LiteralArg(value="x"),
+                "body": LiteralArg(value="x"),
+            },
+        ),
+        PlanStep(
+            step_id="s1",
+            tool="send_email",
+            args={
+                "to": ListArg(items=[LiteralArg(value="bob@company.example")]),
+                "subject": LiteralArg(value="x"),
+                "body": LiteralArg(value="x"),
+            },
+        ),
+        PlanStep(
+            step_id="s2",
+            tool="create_event",
+            args={
+                "title": LiteralArg(value="Sync"),
+                "start": LiteralArg(value="2026-01-06T10:00:00"),
+                "end": LiteralArg(value="2026-01-06T11:00:00"),
+            },
+        ),
+    ]
+    cfg = PolicyConfig(contacts_allowlist=set(), max_side_effects=10, max_email_side_effects=1)
+    result = Executor(env, cfg).run(Plan(steps=steps))
+
+    statuses = [o.status for o in result.outcomes]
+    assert statuses == ["executed", "denied", "executed"]
+    assert "P5" in result.outcomes[1].rules
+    assert len(env.mailbox.sent) == 1
+    assert len(env.calendar.events) == 1
+
+
+def test_p5_destructive_class_budget_is_stricter_than_the_calendar_class_budget():
+    from cordon.tools.base import CalendarEvent
+
+    env = Environment(
+        mailbox=MockMailbox(),
+        calendar=MockCalendar(
+            events=[
+                CalendarEvent(
+                    id=f"evt{i}",
+                    title="Sync",
+                    start="2026-01-06T10:00:00",
+                    end="2026-01-06T11:00:00",
+                )
+                for i in range(3)
+            ]
+        ),
+    )
+    steps = [
+        PlanStep(
+            step_id=f"s{i}", tool="delete_event", args={"event_id": LiteralArg(value=f"evt{i}")}
+        )
+        for i in range(3)
+    ]
+    cfg = PolicyConfig(
+        contacts_allowlist=set(), max_calendar_side_effects=10, max_destructive_side_effects=2
+    )
+    result = Executor(env, cfg, confirm=approve_all).run(Plan(steps=steps))
+
+    statuses = [o.status for o in result.outcomes]
+    assert statuses == ["confirm_approved", "confirm_approved", "denied"]
+    assert "P5" in result.outcomes[2].rules
+    assert len(env.calendar.events) == 1
 
 
 def test_delete_event_always_requires_confirmation_even_for_the_user_own_event():

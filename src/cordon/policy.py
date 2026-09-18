@@ -15,16 +15,10 @@ from typing import Any
 from cordon.provenance import Sensitivity, Tainted, TrustLevel
 
 DESTRUCTIVE_TOOLS = {"delete_event"}
-SIDE_EFFECT_TOOLS = {
-    "send_email",
-    "forward_email",
-    "reply_email",
-    "create_event",
-    "update_event",
-    "add_attendee",
-    "delete_event",
-}
+EMAIL_TOOLS = {"send_email", "forward_email", "reply_email"}
 CALENDAR_TOOLS = {"create_event", "update_event", "add_attendee"}
+CALENDAR_CLASS_TOOLS = CALENDAR_TOOLS | DESTRUCTIVE_TOOLS  # for P5 budgeting only
+SIDE_EFFECT_TOOLS = EMAIL_TOOLS | CALENDAR_CLASS_TOOLS
 
 
 class Decision(StrEnum):
@@ -47,6 +41,9 @@ class PolicyVerdict:
 class PolicyConfig:
     contacts_allowlist: set[str]
     max_side_effects: int = 5
+    max_email_side_effects: int = 5
+    max_calendar_side_effects: int = 5
+    max_destructive_side_effects: int = 2
 
 
 @dataclass
@@ -54,6 +51,9 @@ class PolicyState:
     """Mutable, per-plan-execution counters the engine needs across calls."""
 
     side_effect_count: int = 0
+    email_count: int = 0
+    calendar_count: int = 0
+    destructive_count: int = 0
 
 
 def _most_restrictive(verdicts: list[PolicyVerdict]) -> PolicyVerdict:
@@ -92,13 +92,20 @@ def check_p1_recipient_provenance(
 
 def check_p2_exfiltration(
     recipients: list[Tainted[str]],
-    content: Tainted[str] | None,
+    contents: list[Tainted[str]],
     cfg: PolicyConfig,
 ) -> PolicyVerdict:
     """P2: content labeled private must not flow to a recipient outside
     the contacts allowlist without confirmation — regardless of whether
-    that recipient already passed P1 (e.g. as a request literal)."""
-    if content is None or content.provenance.sensitivity != Sensitivity.PRIVATE:
+    that recipient already passed P1 (e.g. as a request literal).
+
+    Examines every text-bearing argument a call carries (subject, body,
+    note, title, description, location, ...) rather than a single
+    hardcoded field, since private content can leak through any of them.
+    For calendar tools, "recipients" means attendees — anyone invited can
+    read the title/description/location.
+    """
+    if not any(c.provenance.sensitivity == Sensitivity.PRIVATE for c in contents):
         return PolicyVerdict(decision=Decision.ALLOW)
     rules: list[str] = []
     reasons: list[str] = []
@@ -144,15 +151,25 @@ def check_p4_calendar(tool: str, fields: list[Tainted[Any]]) -> PolicyVerdict:
 
 
 def check_p5_budget(tool: str, state: PolicyState, cfg: PolicyConfig) -> PolicyVerdict:
-    """P5: hard cap on side-effecting calls per plan."""
+    """P5: hard cap on side-effecting calls per plan — an overall cap plus
+    a per-tool-class cap (email, calendar, destructive). Any one of them
+    tripping is enough to deny; a plan that's fine on the overall count
+    can still be denied for doing too many destructive things, etc."""
     if tool not in SIDE_EFFECT_TOOLS:
         return PolicyVerdict(decision=Decision.ALLOW)
+    reasons: list[str] = []
     if state.side_effect_count >= cfg.max_side_effects:
-        return PolicyVerdict(
-            decision=Decision.DENY,
-            rules=["P5"],
-            reasons=[f"side-effect budget ({cfg.max_side_effects}) exceeded"],
+        reasons.append(f"overall side-effect budget ({cfg.max_side_effects}) exceeded")
+    if tool in EMAIL_TOOLS and state.email_count >= cfg.max_email_side_effects:
+        reasons.append(f"email side-effect budget ({cfg.max_email_side_effects}) exceeded")
+    if tool in CALENDAR_CLASS_TOOLS and state.calendar_count >= cfg.max_calendar_side_effects:
+        reasons.append(f"calendar side-effect budget ({cfg.max_calendar_side_effects}) exceeded")
+    if tool in DESTRUCTIVE_TOOLS and state.destructive_count >= cfg.max_destructive_side_effects:
+        reasons.append(
+            f"destructive side-effect budget ({cfg.max_destructive_side_effects}) exceeded"
         )
+    if reasons:
+        return PolicyVerdict(decision=Decision.DENY, rules=["P5"], reasons=reasons)
     return PolicyVerdict(decision=Decision.ALLOW)
 
 
@@ -160,17 +177,25 @@ def evaluate_call(
     tool: str,
     *,
     recipients: list[Tainted[str]] | None = None,
-    content: Tainted[str] | None = None,
+    contents: list[Tainted[str]] | None = None,
+    calendar_recipients: list[Tainted[str]] | None = None,
     calendar_fields: list[Tainted[Any]] | None = None,
     cfg: PolicyConfig,
     state: PolicyState,
 ) -> PolicyVerdict:
     """Runs every applicable P1-P5 rule for one tool call and returns the
-    single most restrictive verdict (DENY beats CONFIRM beats ALLOW)."""
+    single most restrictive verdict (DENY beats CONFIRM beats ALLOW).
+
+    ``recipients`` (email addresses) triggers both P1 and P2. ``calendar_
+    recipients`` (attendees) triggers P2 only — P1 is email-specific per
+    CLAUDE.md, calendar attendee provenance is P4's job instead.
+    """
     verdicts = [check_p5_budget(tool, state, cfg), check_p3_destructive(tool)]
     if recipients:
         verdicts.append(check_p1_recipient_provenance(recipients, cfg))
-        verdicts.append(check_p2_exfiltration(recipients, content, cfg))
+        verdicts.append(check_p2_exfiltration(recipients, contents or [], cfg))
+    if calendar_recipients:
+        verdicts.append(check_p2_exfiltration(calendar_recipients, contents or [], cfg))
     if calendar_fields:
         verdicts.append(check_p4_calendar(tool, calendar_fields))
     return _most_restrictive(verdicts)
