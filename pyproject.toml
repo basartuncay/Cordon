@@ -36,6 +36,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not smoke_real_api'"
+markers = [
+    "smoke_real_api: makes a real Anthropic API call and costs real money; excluded by default (see tests/test_smoke_real_api.py) — run with `uv run pytest -m smoke_real_api`",
+]
 
 [tool.mypy]
 python_version = "3.12"

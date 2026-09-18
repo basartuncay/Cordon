@@ -182,9 +182,24 @@ class Executor:
         self.enforce_policy = enforce_policy
 
     def run(self, plan: Plan) -> ExecutionResult:
+        """Runs each step in order. A plan can be structurally valid (it
+        passed Plan's own validation) and still fail at execution time in
+        a way nothing could have caught ahead of time — e.g. a search
+        that returns no results, then a later step refs into result[0].
+        That must fail this one scenario, never crash the caller: we
+        record it as an "error" outcome and stop the plan there, since
+        any later step is likely to depend on the state that just failed.
+        """
         result = ExecutionResult()
         for step in plan.steps:
-            result.outcomes.append(self._run_step(step, result))
+            try:
+                outcome = self._run_step(step, result)
+            except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
+                result.outcomes.append(
+                    StepOutcome(step.step_id, step.tool, "error", reasons=[str(exc)])
+                )
+                break
+            result.outcomes.append(outcome)
         return result
 
     def _run_step(self, step: PlanStep, exec_result: ExecutionResult) -> StepOutcome:

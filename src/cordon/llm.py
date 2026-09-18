@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from cordon.dotenv import load_dotenv
+
 
 @dataclass
 class LLMUsage:
@@ -61,6 +63,7 @@ class AnthropicClient:
                 "the 'anthropic' package is required for AnthropicClient "
                 "(uv sync should have installed it)"
             ) from exc
+        load_dotenv()
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError(
@@ -119,6 +122,7 @@ class ModelConfig:
 
 
 def default_model_config() -> ModelConfig:
+    load_dotenv()
     return ModelConfig(
         baseline_model=os.environ.get("CORDON_BASELINE_MODEL", "claude-sonnet-5"),
         planner_model=os.environ.get("CORDON_PLANNER_MODEL", "claude-sonnet-5"),

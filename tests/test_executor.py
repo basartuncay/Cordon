@@ -14,8 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from cordon.confirm import AutoApproveDecider, AutoDenyDecider, ConfirmLog
 from cordon.env import Environment
 from cordon.executor import Executor
@@ -34,6 +32,54 @@ deny_all = AutoDenyDecider()
 
 
 # --- unit-level executor mechanics ------------------------------------------
+
+
+def test_run_step_error_is_caught_and_stops_the_plan_without_raising():
+    """A real model can build a structurally valid plan that still fails
+    at execution time in a way no validation could catch ahead of time —
+    e.g. it searches for something, gets zero results, then refs into
+    result[0]. That must fail the *scenario*, not crash the harness."""
+    env = Environment(mailbox=MockMailbox(inbox=[]), calendar=MockCalendar())
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="search1", tool="search_emails", args={"query": LiteralArg(value="alice")}
+            ),
+            PlanStep(
+                step_id="s2",
+                tool="reply_email",
+                args={
+                    "email_id": RefArg(step_id="search1", path="0.id"),
+                    "body": LiteralArg(value="hi"),
+                },
+            ),
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set())).run(plan)
+
+    assert len(result.outcomes) == 2
+    assert result.outcomes[0].status == "executed"
+    assert result.outcomes[1].status == "error"
+    assert result.outcomes[1].reasons
+    assert len(env.mailbox.sent) == 0
+
+
+def test_run_step_error_on_a_write_tool_does_not_execute_it():
+    env = Environment(mailbox=MockMailbox(inbox=[]), calendar=MockCalendar())
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="s1",
+                tool="reply_email",
+                args={"email_id": LiteralArg(value="missing-id"), "body": LiteralArg(value="hi")},
+            )
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set())).run(plan)
+
+    assert result.outcomes[0].status == "error"
+    assert "missing-id" in result.outcomes[0].reasons[0]
+    assert len(env.mailbox.sent) == 0
 
 
 def test_read_step_wraps_result_with_email_ground_truth_provenance():
@@ -210,7 +256,7 @@ def test_quarantine_step_defaults_schema_and_instruction_when_omitted():
     assert seen["instruction"]
 
 
-def test_quarantine_step_without_configured_function_raises():
+def test_quarantine_step_without_configured_function_is_an_error_outcome():
     env = Environment(
         mailbox=MockMailbox(inbox=[]),
         calendar=MockCalendar(),
@@ -223,8 +269,10 @@ def test_quarantine_step_without_configured_function_raises():
         ]
     )
     executor = Executor(env, PolicyConfig(contacts_allowlist=set()))
-    with pytest.raises(RuntimeError, match="no quarantine function configured"):
-        executor.run(plan)
+    result = executor.run(plan)
+
+    assert result.outcomes[0].status == "error"
+    assert "no quarantine function configured" in result.outcomes[0].reasons[0]
 
 
 def test_template_step_concatenates_parts_and_combines_their_provenance():

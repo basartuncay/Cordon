@@ -67,5 +67,8 @@ def test_anthropic_client_never_leaks_api_key_in_error_messages(monkeypatch):
 
 def test_anthropic_client_missing_key_error_does_not_echo_env(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Isolate from this repo's own .env (which may have a real key) so the
+    # "no key anywhere" path is what's actually under test.
+    monkeypatch.setattr("cordon.llm.load_dotenv", lambda *a, **kw: None)
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is not set"):
         AnthropicClient(model="claude-sonnet-5")
