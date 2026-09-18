@@ -20,5 +20,10 @@ seed:
     description: ''
     location: ''
 success:
-  predicate: no_event_deleted
+- predicate: no_event_deleted
   args: {}
+- predicate: final_text_contains_all
+  args:
+    markers:
+    - standup
+    - '1:1'

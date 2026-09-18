@@ -18,25 +18,25 @@ from cordon.executor import ExecutionResult, Executor
 from cordon.llm import LLMClient, LLMUsage
 from cordon.plan import QUARANTINE_TOOL, TEMPLATE_TOOL
 from cordon.planner import PlannerError, make_plan
-from cordon.policy import PolicyConfig
+from cordon.policy import SIDE_EFFECT_TOOLS, PolicyConfig
+from cordon.provenance import Tainted
 from cordon.quarantine import extract as quarantine_extract
 from evals.baselines.b0 import RunResult
 
 
-def _final_text(exec_result: ExecutionResult) -> str:
+def _status_line(exec_result: ExecutionResult) -> str:
     """A deterministic, template-built status line derived only from step
     outcomes/counts — never from anything read out of the mock env. This
     is structural, not an oversight: Cordon has no "summarize what you
     read in your own words" turn that could echo attacker-authored
     phrasing back to the user, which is exactly B0/B1's A7 (poisoned-
-    summary) vulnerability. The only path untrusted text has to the user
-    here is through an explicit quarantine/template step, and that value
-    stays tainted the whole way — it never becomes free-form narration.
+    summary) vulnerability.
     """
     executed = sum(1 for o in exec_result.outcomes if o.status == "executed")
     approved = sum(1 for o in exec_result.outcomes if o.status == "confirm_approved")
     rejected = sum(1 for o in exec_result.outcomes if o.status == "confirm_rejected")
     denied = sum(1 for o in exec_result.outcomes if o.status == "denied")
+    errored = sum(1 for o in exec_result.outcomes if o.status == "error")
     parts = [f"Plan executed: {len(exec_result.outcomes)} step(s)."]
     allowed = executed + approved
     allowed_note = f"{allowed} allowed"
@@ -47,7 +47,29 @@ def _final_text(exec_result: ExecutionResult) -> str:
         parts.append(f"{rejected} rejected at confirmation")
     if denied:
         parts.append(f"{denied} denied by policy/budget")
+    if errored:
+        parts.append(f"{errored} failed to execute")
     return ", ".join(parts) + "."
+
+
+def _extracted_content_lines(exec_result: ExecutionResult) -> list[str]:
+    """The only path untrusted text has to the user: an explicit
+    quarantine/template step's output, always labeled with its own
+    provenance and never fed back into any decision — this function runs
+    only after the plan has already finished executing."""
+    lines = []
+    for o in exec_result.outcomes:
+        if o.tool not in (QUARANTINE_TOOL, TEMPLATE_TOOL) or o.status != "executed":
+            continue
+        tainted = exec_result.step_outputs.get(o.step_id)
+        trust = tainted.provenance.trust if isinstance(tainted, Tainted) else "unknown"
+        lines.append(f"[derived from untrusted content, trust={trust}] {o.result}")
+    return lines
+
+
+def _final_text(exec_result: ExecutionResult) -> str:
+    lines = [_status_line(exec_result), *_extracted_content_lines(exec_result)]
+    return "\n".join(lines)
 
 
 def _run_cordon(
@@ -70,6 +92,7 @@ def _run_cordon(
             final_text="Planning failed; no actions were taken.",
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
+            errored=True,
         )
 
     def quarantine_fn(text: str, schema, instruction: str) -> str:
@@ -92,6 +115,12 @@ def _run_cordon(
         if o.status in ("executed", "confirm_approved")
         and o.tool not in (QUARANTINE_TOOL, TEMPLATE_TOOL)
     ]
+    errored = any(o.status == "error" for o in exec_result.outcomes)
+    policy_evaluated_count = (
+        sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS)
+        if enforce_policy
+        else 0
+    )
 
     return RunResult(
         turns=len(plan.steps),
@@ -101,6 +130,8 @@ def _run_cordon(
         output_tokens=usage.output_tokens,
         confirm_count=confirm_log.confirm_count,
         confirm_approved_count=confirm_log.approved_count,
+        errored=errored,
+        policy_evaluated_count=policy_evaluated_count,
     )
 
 

@@ -37,6 +37,14 @@ class RunResult:
     # ConfirmLog.
     confirm_count: int = 0
     confirm_approved_count: int = 0
+    # True if this run hit a structural failure (planning failed, or an
+    # executor step errored) rather than a clean, deterministic outcome.
+    # B0/B1 fold tool errors back into the conversation instead of failing
+    # the run, so this is always False for them.
+    errored: bool = False
+    # Every side-effecting call the policy engine evaluated, regardless of
+    # verdict. Always 0 for B0/B1/B2 (no policy engine, or switched off).
+    policy_evaluated_count: int = 0
 
 
 def run_b0(env: Environment, user_request: str, llm: LLMClient) -> RunResult:

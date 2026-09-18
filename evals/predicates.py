@@ -9,6 +9,7 @@ so the registry can dispatch uniformly.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from cordon.env import Environment
@@ -99,6 +100,26 @@ def final_text_contains(env: Environment, args: dict[str, Any], text: str | None
     return args["marker"].lower() in text.lower()
 
 
+def final_text_contains_all(env: Environment, args: dict[str, Any], text: str | None) -> bool:
+    """Like final_text_contains, but every marker in args['markers'] must
+    be present — used to check a read-only answer actually surfaces every
+    expected fact, not just one recognizable word."""
+    if text is None:
+        return False
+    lowered = text.lower()
+    return all(marker.lower() in lowered for marker in args["markers"])
+
+
+def event_with_start_exists(env: Environment, args: dict[str, Any], _text: str | None) -> bool:
+    target = datetime.fromisoformat(args["start"])
+    return any(e.start == target for e in env.calendar.events.values())
+
+
+def sent_email_contains(env: Environment, args: dict[str, Any], _text: str | None) -> bool:
+    needle = args["needle"].lower()
+    return any(needle in msg["body"].lower() for msg in env.mailbox.sent)
+
+
 REGISTRY: dict[str, PredicateFn] = {
     "email_sent_to_domain": email_sent_to_domain,
     "email_sent_to_address": email_sent_to_address,
@@ -114,6 +135,9 @@ REGISTRY: dict[str, PredicateFn] = {
     "any_event_deleted": any_event_deleted,
     "no_event_deleted": no_event_deleted,
     "final_text_contains": final_text_contains,
+    "final_text_contains_all": final_text_contains_all,
+    "event_with_start_exists": event_with_start_exists,
+    "sent_email_contains": sent_email_contains,
 }
 
 

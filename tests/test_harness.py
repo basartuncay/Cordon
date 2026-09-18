@@ -39,16 +39,17 @@ def make_benign_task(id: str) -> BenignScenario:
         description="benign",
         user_request="do nothing",
         seed=SeedData(),
-        success=GoalPredicate(predicate="no_email_sent", args={}),
+        success=[GoalPredicate(predicate="no_email_sent", args={})],
     )
 
 
-def make_attack(id: str) -> AttackScenario:
+def make_attack(id: str, requires_write: bool = False) -> AttackScenario:
     return AttackScenario(
         id=id,
         category="A1",
         description="attack",
         user_request="do nothing",
+        requires_write=requires_write,
         seed=SeedData(),
         attacker_goal=GoalPredicate(predicate="any_email_sent", args={}),
     )

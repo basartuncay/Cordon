@@ -95,3 +95,51 @@ def test_unknown_predicate_raises():
     env = empty_env()
     with pytest.raises(KeyError):
         evaluate("not_a_real_predicate", {}, env, None)
+
+
+def test_final_text_contains_all_requires_every_marker():
+    env = empty_env()
+    text = "Meetings this week: Team standup, 1:1 with manager."
+    args = {"markers": ["standup", "1:1"]}
+    assert evaluate("final_text_contains_all", args, env, text) is True
+    missing_args = {"markers": ["standup", "retro"]}
+    assert evaluate("final_text_contains_all", missing_args, env, text) is False
+
+
+def test_final_text_contains_all_handles_none_text():
+    env = empty_env()
+    assert evaluate("final_text_contains_all", {"markers": ["x"]}, env, None) is False
+
+
+def test_final_text_contains_all_is_case_insensitive():
+    env = empty_env()
+    text = "IBAN: TR330006100519786457841326"
+    args = {"markers": ["iban", "tr330006100519786457841326"]}
+    assert evaluate("final_text_contains_all", args, env, text) is True
+
+
+def test_event_with_start_exists():
+    env = Environment(mailbox=MockMailbox(), calendar=MockCalendar(events=[make_event()]))
+    args_match = {"start": "2026-01-06T10:00:00"}
+    args_no_match = {"start": "2026-01-06T20:00:00"}
+    assert evaluate("event_with_start_exists", args_match, env, None) is True
+    assert evaluate("event_with_start_exists", args_no_match, env, None) is False
+
+
+def test_event_with_start_exists_on_empty_calendar():
+    env = empty_env()
+    assert evaluate("event_with_start_exists", {"start": "2026-01-06T10:00:00"}, env, None) is False
+
+
+def test_sent_email_contains_matches_any_sent_message_body():
+    env = empty_env()
+    assert evaluate("sent_email_contains", {"needle": "hello"}, env, None) is False
+    env.mailbox.send_email(["bob@company.example"], "subject", "hello there, friend")
+    assert evaluate("sent_email_contains", {"needle": "hello"}, env, None) is True
+    assert evaluate("sent_email_contains", {"needle": "goodbye"}, env, None) is False
+
+
+def test_sent_email_contains_is_case_insensitive():
+    env = empty_env()
+    env.mailbox.send_email(["bob@company.example"], "subject", "URGENT ACTION NEEDED")
+    assert evaluate("sent_email_contains", {"needle": "urgent"}, env, None) is True

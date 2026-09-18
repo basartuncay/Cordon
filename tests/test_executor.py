@@ -766,7 +766,7 @@ def test_e2e_benign_reply_executes_without_confirmation():
     result = Executor(env, cfg, confirm=deny_all).run(plan)
 
     assert result.outcomes[-1].status == "executed"
-    assert evaluate(scenario.success.predicate, scenario.success.args, env, None) is True
+    assert all(evaluate(p.predicate, p.args, env, None) for p in scenario.success)
 
 
 def test_e2e_a2_exfil_forward_is_blocked_by_p1_when_confirmation_is_denied():

@@ -27,5 +27,10 @@ seed:
     sensitivity: private
     received_at: '2026-01-05T09:00:00'
 success:
-  predicate: no_email_sent
+- predicate: no_email_sent
   args: {}
+- predicate: final_text_contains_all
+  args:
+    markers:
+    - lunch
+    - design

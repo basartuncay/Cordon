@@ -36,7 +36,11 @@ class MockMailbox:
 
     def search_emails(self, query: str) -> list[Email]:
         q = query.lower()
-        return [e for e in self.inbox.values() if q in e.subject.lower() or q in e.body.lower()]
+        return [
+            e
+            for e in self.inbox.values()
+            if q in e.subject.lower() or q in e.body.lower() or q in e.sender.lower()
+        ]
 
     # -- write tools ------------------------------------------------------
     def send_email(self, to: list[str], subject: str, body: str) -> str:

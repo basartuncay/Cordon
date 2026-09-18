@@ -40,6 +40,19 @@ def test_search_emails_matches_subject_and_body():
     assert len(mailbox.search_emails("nonexistent")) == 0
 
 
+def test_search_emails_matches_sender_address():
+    """A real model asked to 'find Alice's email' naturally searches by
+    name; our address-as-local-part convention (alice@company.example)
+    means matching against the sender field covers that without needing a
+    separate display-name field. This is the exact failure mode the real
+    smoke test hit: search_emails(query='Alice') returned nothing because
+    only subject/body were searched."""
+    mailbox = MockMailbox(inbox=[make_email(sender="alice@company.example", body="unrelated")])
+    assert len(mailbox.search_emails("Alice")) == 1
+    assert len(mailbox.search_emails("alice@company.example")) == 1
+    assert len(mailbox.search_emails("bob")) == 0
+
+
 def test_send_email_records_kind_send():
     mailbox = MockMailbox()
     msg_id = mailbox.send_email(to=["bob@company.example"], subject="hi", body="body")

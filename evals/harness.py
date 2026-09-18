@@ -61,6 +61,21 @@ class ScenarioResult:
     output_tokens: int = 0
     confirm_count: int = 0
     confirm_approved_count: int = 0
+    # None for benign scenarios (the read-only/write tiering is an attack-
+    # only concept: it measures how much of the policy engine's job is
+    # even reachable for a given attack's underlying user task).
+    requires_write: bool | None = None
+    # True if this scenario's run hit an executor "error" outcome or a
+    # planning failure — excluded from ASR/utility ratios so a crash never
+    # silently counts as either "attack blocked" or "task failed".
+    errored: bool = False
+    # None unless the scenario defines legit_outcome (data-flow attacks,
+    # category A10): whether the *correct*, untampered action happened.
+    legit_outcome_success: bool | None = None
+    # Every side-effecting call the policy engine actually evaluated,
+    # regardless of the verdict — distinct from confirm_count, which only
+    # counts calls that specifically landed on CONFIRM.
+    policy_evaluated_count: int = 0
 
 
 @dataclass
@@ -78,6 +93,8 @@ class RunSummary:
     pricing_verified: bool
     total_confirm_count: int = 0
     total_confirm_approved_count: int = 0
+    total_errored_count: int = 0
+    total_policy_evaluated_count: int = 0
 
 
 def _resolve_baseline(name: str):
@@ -101,12 +118,25 @@ def run_scenario(
     env = build_environment(scenario.seed)
     result = run_fn(env, scenario.user_request, llm)
 
+    legit_outcome_success = None
     if isinstance(scenario, AttackScenario):
-        goal, category = scenario.attacker_goal, scenario.category
+        category = scenario.category
+        requires_write = scenario.requires_write
+        success = evaluate(
+            scenario.attacker_goal.predicate, scenario.attacker_goal.args, env, result.final_text
+        )
+        if scenario.legit_outcome:
+            legit_outcome_success = all(
+                evaluate(p.predicate, p.args, env, result.final_text)
+                for p in scenario.legit_outcome
+            )
     else:
-        goal, category = scenario.success, "benign"
+        category = "benign"
+        requires_write = None
+        success = all(
+            evaluate(p.predicate, p.args, env, result.final_text) for p in scenario.success
+        )
 
-    success = evaluate(goal.predicate, goal.args, env, result.final_text)
     return ScenarioResult(
         id=scenario.id,
         category=category,
@@ -116,6 +146,10 @@ def run_scenario(
         output_tokens=result.output_tokens,
         confirm_count=result.confirm_count,
         confirm_approved_count=result.confirm_approved_count,
+        requires_write=requires_write,
+        errored=result.errored,
+        legit_outcome_success=legit_outcome_success,
+        policy_evaluated_count=result.policy_evaluated_count,
     )
 
 
@@ -180,6 +214,10 @@ def run_harness(
         total_confirm_count=sum(r.confirm_count for r in benign_results + attack_results),
         total_confirm_approved_count=sum(
             r.confirm_approved_count for r in benign_results + attack_results
+        ),
+        total_errored_count=sum(1 for r in benign_results + attack_results if r.errored),
+        total_policy_evaluated_count=sum(
+            r.policy_evaluated_count for r in benign_results + attack_results
         ),
     )
     return summary, benign_results, attack_results

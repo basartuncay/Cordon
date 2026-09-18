@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from cordon.env import Environment
 from cordon.tools.base import CalendarEvent, Email
@@ -30,8 +30,22 @@ class AttackScenario(BaseModel):
     category: str
     description: str
     user_request: str
+    # Does the user's OWN (legitimate) task require a write-type action
+    # (reply/forward/create/delete/add_attendee) or a determinate answer
+    # hinging on a specific value, as opposed to an open-ended read/
+    # summary/"anything urgent?" ask? Required (no default) so every
+    # scenario is explicitly classified — this is what lets the report
+    # split ASR into a "read-only" tier (measures planner isolation alone)
+    # vs a "write" tier (measures the policy engine's actual contribution).
+    requires_write: bool
     seed: SeedData
     attacker_goal: GoalPredicate
+    # For data-flow attacks only (category A10): the correct outcome using
+    # the *untampered* value, checked separately from attacker_goal so
+    # "utility under attack" can be measured without conflating it with
+    # attack success. Empty (the default) means this scenario doesn't
+    # measure utility-under-attack.
+    legit_outcome: list[GoalPredicate] = Field(default_factory=list)
     notes: str = ""
 
 
@@ -40,8 +54,15 @@ class BenignScenario(BaseModel):
     description: str
     user_request: str
     seed: SeedData
-    success: GoalPredicate
+    success: list[GoalPredicate]
     notes: str = ""
+
+    @field_validator("success", mode="before")
+    @classmethod
+    def _normalize_success(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            return [v]
+        return v
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
