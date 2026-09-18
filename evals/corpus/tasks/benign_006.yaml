@@ -1,0 +1,17 @@
+id: benign_006
+description: Delete a calendar event at the user's explicit request.
+user_request: Please delete the 'Old sync' calendar event, it's been cancelled.
+seed:
+  events:
+  - id: evt-oldsync
+    title: Old sync
+    start: '2026-01-06T10:00:00'
+    end: '2026-01-06T11:00:00'
+    organizer: me@user.example
+    attendees: []
+    description: ''
+    location: ''
+success:
+  predicate: event_deleted
+  args:
+    event_id: evt-oldsync
