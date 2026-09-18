@@ -123,7 +123,7 @@ def test_quarantine_step_preserves_input_provenance():
     executor = Executor(
         env,
         PolicyConfig(contacts_allowlist=set()),
-        quarantine=lambda _text: "attacker@evil.example",
+        quarantine=lambda _text, _schema, _instruction: "attacker@evil.example",
     )
     result = executor.run(plan)
 
@@ -131,6 +131,83 @@ def test_quarantine_step_preserves_input_provenance():
     extracted = result.step_outputs["s2"]
     assert extracted.value == "attacker@evil.example"
     assert extracted.provenance.trust == "unknown"  # inherited from s1, not laundered
+
+
+def test_quarantine_step_passes_schema_and_instruction_args_through():
+    """schema/instruction are plan args (LiteralArg), not hardcoded — the
+    executor must build a real ExtractionSchema from them and hand it,
+    along with the instruction text, to the configured quarantine fn."""
+    from cordon.quarantine import ExtractionSchema
+
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="attacker@evil.example",
+                    sender_trust="unknown",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="reply to verify@evil.example",
+                    sensitivity="private",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ]
+        ),
+        calendar=MockCalendar(),
+    )
+    seen: dict = {}
+
+    def spy_quarantine(text, schema, instruction):
+        seen["text"] = text
+        seen["schema"] = schema
+        seen["instruction"] = instruction
+        return "verify@evil.example"
+
+    plan = Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool=QUARANTINE_TOOL,
+                args={
+                    "input": RefArg(step_id="s1", path="body"),
+                    "schema": LiteralArg(value={"kind": "email"}),
+                    "instruction": LiteralArg(value="pull out the reply-to address"),
+                },
+            ),
+        ]
+    )
+    Executor(env, PolicyConfig(contacts_allowlist=set()), quarantine=spy_quarantine).run(plan)
+
+    assert seen["text"] == "reply to verify@evil.example"
+    assert seen["schema"] == ExtractionSchema(kind="email")
+    assert seen["instruction"] == "pull out the reply-to address"
+
+
+def test_quarantine_step_defaults_schema_and_instruction_when_omitted():
+    from cordon.quarantine import ExtractionSchema
+
+    env = Environment(mailbox=MockMailbox(inbox=[]), calendar=MockCalendar())
+    seen: dict = {}
+
+    def spy_quarantine(text, schema, instruction):
+        seen["schema"] = schema
+        seen["instruction"] = instruction
+        return "ok"
+
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="s1", tool=QUARANTINE_TOOL, args={"input": LiteralArg(value="some text")}
+            )
+        ]
+    )
+    Executor(env, PolicyConfig(contacts_allowlist=set()), quarantine=spy_quarantine).run(plan)
+
+    assert seen["schema"] == ExtractionSchema(kind="text")
+    assert seen["instruction"]
 
 
 def test_quarantine_step_without_configured_function_raises():
@@ -548,6 +625,13 @@ def _attacker_goal_true(scenario, env) -> bool:
     return evaluate(scenario.attacker_goal.predicate, scenario.attacker_goal.args, env, None)
 
 
+def _fake_quarantine_returning(value: str):
+    """A scripted quarantine stand-in that always 'extracts' `value`,
+    ignoring the schema/instruction it's given (which real quarantine.py
+    would enforce, but isn't the point of these executor-level tests)."""
+    return lambda _text, _schema, _instruction: value
+
+
 def test_e2e_benign_reply_executes_without_confirmation():
     scenario = _load("benign_001", "benign")
     env = build_environment(scenario.seed)
@@ -603,7 +687,7 @@ def test_e2e_a2_exfil_forward_is_blocked_by_p1_when_confirmation_is_denied():
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
     result = Executor(
-        env, cfg, confirm=deny_all, quarantine=lambda _body: "verify@evil.example"
+        env, cfg, confirm=deny_all, quarantine=_fake_quarantine_returning("verify@evil.example")
     ).run(plan)
 
     forward_outcome = result.outcomes[-1]
@@ -647,7 +731,7 @@ def test_e2e_a2_exfil_forward_succeeds_only_if_a_human_approves_the_confirmation
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
     result = Executor(
-        env, cfg, confirm=approve_all, quarantine=lambda _body: "verify@evil.example"
+        env, cfg, confirm=approve_all, quarantine=_fake_quarantine_returning("verify@evil.example")
     ).run(plan)
 
     assert result.outcomes[-1].status == "confirm_approved"
@@ -685,7 +769,9 @@ def test_e2e_a3_calendar_attendee_injection_is_blocked_by_p4():
         ]
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
-    result = Executor(env, cfg, confirm=deny_all, quarantine=lambda addr: addr).run(plan)
+    result = Executor(
+        env, cfg, confirm=deny_all, quarantine=lambda addr, _schema, _instruction: addr
+    ).run(plan)
 
     add_outcome = result.outcomes[-1]
     assert add_outcome.status == "confirm_rejected"
@@ -727,7 +813,7 @@ def test_e2e_a5_multilingual_exfil_is_blocked_the_same_way_as_a2():
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
     result = Executor(
-        env, cfg, confirm=deny_all, quarantine=lambda _body: "attacker@evil.example"
+        env, cfg, confirm=deny_all, quarantine=_fake_quarantine_returning("attacker@evil.example")
     ).run(plan)
 
     forward_outcome = result.outcomes[-1]

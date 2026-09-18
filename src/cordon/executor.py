@@ -29,6 +29,7 @@ from cordon.policy import (
     evaluate_call,
 )
 from cordon.provenance import LITERAL_PROVENANCE, Provenance, Sensitivity, Tainted, TrustLevel
+from cordon.quarantine import ExtractionSchema
 from cordon.tools.dispatch import call_tool
 
 READ_TOOLS = {"list_emails", "get_email", "search_emails", "list_events", "get_event"}
@@ -59,7 +60,7 @@ CALENDAR_ATTENDEE_ARG_NAMES: dict[str, str] = {
     "add_attendee": "attendee",
 }
 
-QuarantineFn = Callable[[Any], Any]  # (untrusted value) -> extracted plain value
+QuarantineFn = Callable[[str, ExtractionSchema, str], str]  # (text, schema, instruction) -> value
 
 
 def _summarize_value(value: Any) -> str:
@@ -253,12 +254,25 @@ class Executor:
         tainted_input = _resolve_value(exec_result.step_outputs, step.args["input"])
         if not isinstance(tainted_input, Tainted):
             raise TypeError("quarantine_extract requires its 'input' arg to resolve to a scalar")
-        extracted = self._quarantine(tainted_input.value)
+
+        schema_dict = self._resolve_plain(exec_result, step.args.get("schema")) or {"kind": "text"}
+        schema = ExtractionSchema.model_validate(schema_dict)
+        instruction = self._resolve_plain(
+            exec_result, step.args.get("instruction")
+        ) or "Extract the relevant value."
+
+        extracted = self._quarantine(str(tainted_input.value), schema, instruction)
         # Same provenance as the input: quarantine can reshape/validate a
         # value but must never elevate its trust or clear its sensitivity.
         tainted_output = Tainted(extracted, tainted_input.provenance)
         exec_result.step_outputs[step.step_id] = tainted_output
         return StepOutcome(step.step_id, step.tool, "executed", result=extracted)
+
+    def _resolve_plain(self, exec_result: ExecutionResult, arg: Any) -> Any:
+        if arg is None:
+            return None
+        resolved = _resolve_value(exec_result.step_outputs, arg)
+        return _unwrap(resolved)
 
     def _run_template_step(self, step: PlanStep, exec_result: ExecutionResult) -> StepOutcome:
         parts_arg = step.args.get("parts")
