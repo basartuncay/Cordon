@@ -39,8 +39,19 @@ class LLMClient(Protocol):
     ) -> LLMResponse: ...
 
 
+def _redact(text: str, secret: str | None) -> str:
+    """Strip a secret value out of a string before it can reach a log/error/output."""
+    if not secret:
+        return text
+    return text.replace(secret, "<redacted>")
+
+
 class AnthropicClient:
-    """Thin wrapper around the Anthropic Messages API."""
+    """Thin wrapper around the Anthropic Messages API.
+
+    The API key is read once here and never returned, logged, or included in
+    any exception message this class raises — see ``_redact``.
+    """
 
     def __init__(self, model: str) -> None:
         try:
@@ -57,6 +68,7 @@ class AnthropicClient:
                 "or export it in your shell, before running a real eval."
             )
         self._client = anthropic.Anthropic(api_key=api_key)
+        self._api_key = api_key
         self.model = model
 
     def run(
@@ -66,13 +78,18 @@ class AnthropicClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=system,
-            messages=messages,  # type: ignore[arg-type]
-            tools=tools or [],  # type: ignore[arg-type]
-        )
+        try:
+            response = self._client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=system,
+                messages=messages,  # type: ignore[arg-type]
+                tools=tools or [],  # type: ignore[arg-type]
+            )
+        except Exception as exc:
+            # Never let a raw SDK exception (which may embed request details)
+            # propagate without a pass through the redaction filter.
+            raise RuntimeError(_redact(str(exc), self._api_key)) from None
         tool_calls = [
             {"id": block.id, "name": block.name, "input": block.input}
             for block in response.content
@@ -96,6 +113,9 @@ class ModelConfig:
     planner_model: str
     quarantine_model: str
     token_budget: int
+    price_input_per_mtok_usd: float
+    price_output_per_mtok_usd: float
+    pricing_verified: bool
 
 
 def default_model_config() -> ModelConfig:
@@ -104,4 +124,20 @@ def default_model_config() -> ModelConfig:
         planner_model=os.environ.get("CORDON_PLANNER_MODEL", "claude-sonnet-5"),
         quarantine_model=os.environ.get("CORDON_QUARANTINE_MODEL", "claude-haiku-4-5-20251001"),
         token_budget=int(os.environ.get("CORDON_TOKEN_BUDGET", "200000")),
+        # Placeholder $/MTok figures — NOT verified against a current pricing
+        # page. Set CORDON_PRICING_VERIFIED=true once you've checked them for
+        # the model actually configured above; until then treat any printed
+        # cost estimate as a rough order of magnitude, not a bill.
+        price_input_per_mtok_usd=float(os.environ.get("CORDON_PRICE_INPUT_PER_MTOK_USD", "3.0")),
+        price_output_per_mtok_usd=float(
+            os.environ.get("CORDON_PRICE_OUTPUT_PER_MTOK_USD", "15.0")
+        ),
+        pricing_verified=os.environ.get("CORDON_PRICING_VERIFIED", "false").strip().lower()
+        == "true",
     )
+
+
+def estimate_cost_usd(input_tokens: int, output_tokens: int, cfg: ModelConfig) -> float:
+    return (input_tokens / 1_000_000) * cfg.price_input_per_mtok_usd + (
+        output_tokens / 1_000_000
+    ) * cfg.price_output_per_mtok_usd

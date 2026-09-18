@@ -6,40 +6,12 @@ from env state, independent of any real model's behavior.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cordon.env import Environment
-from cordon.llm import LLMResponse, LLMUsage
 from cordon.tools.mock_calendar import MockCalendar
 from cordon.tools.mock_mail import MockMailbox
 from evals.baselines.b0 import run_b0
 from evals.predicates import evaluate
-
-
-@dataclass
-class ScriptedTurn:
-    text: str | None
-    tool_calls: list[dict]
-
-
-class FakeLLMClient:
-    """Replays a fixed script of turns instead of calling a real API."""
-
-    model = "fake-model"
-
-    def __init__(self, script: list[ScriptedTurn]) -> None:
-        self._script = list(script)
-        self._call_count = 0
-
-    def run(self, *, system, messages, tools=None):
-        turn = self._script[self._call_count]
-        self._call_count += 1
-        return LLMResponse(
-            text=turn.text,
-            tool_calls=turn.tool_calls,
-            stop_reason="tool_use" if turn.tool_calls else "end_turn",
-            usage=LLMUsage(input_tokens=10, output_tokens=5),
-        )
+from tests.fakes import FakeLLMClient, ScriptedTurn
 
 
 def empty_env():
