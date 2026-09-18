@@ -1,28 +1,21 @@
 """Typed records for the mock mailbox/calendar environment.
 
-Provenance fields here (``sender_trust``, ``sensitivity``) are placeholders
-for the real taint-tracking that lands in M2 (``provenance.py``). For M1
-they exist so the attack corpus can express "this content came from an
-untrusted sender" without the policy engine yet acting on it.
+``sender_trust``/``sensitivity`` are ground truth the mock env assigns at
+seed time; the executor (M2) reads them to build each value's real
+``Provenance`` when it wraps a read-tool result as ``Tainted``. The enums
+themselves live in ``cordon.provenance`` and are re-exported here so
+existing imports keep working.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from cordon.provenance import Sensitivity, TrustLevel
 
-class TrustLevel(StrEnum):
-    USER = "user"
-    CONTACT = "contact"
-    UNKNOWN = "unknown"
-
-
-class Sensitivity(StrEnum):
-    PUBLIC = "public"
-    PRIVATE = "private"
+__all__ = ["CalendarEvent", "Email", "Sensitivity", "TrustLevel"]
 
 
 class Email(BaseModel):
