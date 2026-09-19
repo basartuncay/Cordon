@@ -13,6 +13,35 @@ from typing import Any
 
 from cordon.tools.base import Email
 
+# Gmail-style single-word operators search_emails understands, mapped to
+# the Email field(s) they search. Anything not matching one of these
+# prefixes is treated as free text, matched (like the plain query below)
+# against subject/body/sender. Real Gmail supports quoting a multi-word
+# operator value and many more operators (has:, is:, after:, ...) — this
+# mock only covers what CLAUDE.md's corpus actually needs.
+_QUERY_OPERATORS = ("from", "to", "subject")
+
+
+def _split_query(query: str) -> tuple[dict[str, list[str]], list[str]]:
+    """Splits a query into {"from": [...], "to": [...], "subject": [...]}
+    (each a list of lowercased terms — multiple terms for the same
+    operator are ANDed) plus a list of free-text terms. Operator values
+    are single words, same as Gmail without quotes."""
+    operator_terms: dict[str, list[str]] = {op: [] for op in _QUERY_OPERATORS}
+    free_terms: list[str] = []
+    for token in query.split():
+        low = token.lower()
+        for op in _QUERY_OPERATORS:
+            prefix = f"{op}:"
+            if low.startswith(prefix):
+                value = low[len(prefix) :]
+                if value:
+                    operator_terms[op].append(value)
+                break
+        else:
+            free_terms.append(low)
+    return operator_terms, free_terms
+
 
 class MockMailbox:
     def __init__(
@@ -35,12 +64,31 @@ class MockMailbox:
         return self.inbox[email_id]
 
     def search_emails(self, query: str) -> list[Email]:
-        q = query.lower()
-        return [
-            e
-            for e in self.inbox.values()
-            if q in e.subject.lower() or q in e.body.lower() or q in e.sender.lower()
-        ]
+        """Gmail-style search: from:/to:/subject: operators (case-
+        insensitive, single-word values) plus free text, all substring-
+        matched (never tokenized/stemmed — a mock, not a real search
+        index). Free text matches subject/body/sender, same as before
+        operators existed. Multiple terms (same operator or not) are all
+        required (AND), matching Gmail's default query semantics."""
+        operator_terms, free_terms = _split_query(query)
+
+        def matches(e: Email) -> bool:
+            sender = e.sender.lower()
+            if any(t not in sender for t in operator_terms["from"]):
+                return False
+            to_lower = [addr.lower() for addr in e.to]
+            if any(not any(t in addr for addr in to_lower) for t in operator_terms["to"]):
+                return False
+            subject = e.subject.lower()
+            if any(t not in subject for t in operator_terms["subject"]):
+                return False
+            if free_terms:
+                haystack = f"{e.subject} {e.body} {e.sender}".lower()
+                if any(t not in haystack for t in free_terms):
+                    return False
+            return True
+
+        return [e for e in self.inbox.values() if matches(e)]
 
     # -- write tools ------------------------------------------------------
     def send_email(self, to: list[str], subject: str, body: str) -> str:

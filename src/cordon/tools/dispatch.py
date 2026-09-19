@@ -29,7 +29,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "search_emails",
-        "description": "Search email subjects and bodies for a substring.",
+        "description": (
+            "Search emails. Supports Gmail-style operators from:/to:/subject: "
+            "(case-insensitive, single-word values, e.g. \"from:carol\" or "
+            "\"subject:review\") mixed with free text; free text matches "
+            "subject/body/sender. All matching is substring-based, not fuzzy — "
+            "an operator value must be one word (no quoting), and multiple "
+            "terms (same operator or mixed with free text) are all required "
+            "(AND), not any-of."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
