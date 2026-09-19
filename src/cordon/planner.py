@@ -58,7 +58,10 @@ text — NOT one of literal/ref/list), enum_values, and max_length. Full example
 "step_id": "s1", "path": "body"}}, "schema": {{"kind": "literal", "value": {{"kind": "email", \
 "max_length": 100}}}}, "instruction": {{"kind": "literal", "value": "extract the address"}}}}}}. \
 Note "schema"'s own value has a nested "kind" too (email/date/id/enum/text) — do not confuse it \
-with the outer arg-value "kind" (which must still be "literal" here).
+with the outer arg-value "kind" (which must still be "literal" here). To USE that step's result \
+later, ref it with an EMPTY path: {{"kind": "ref", "step_id": "extract1", "path": ""}} — its \
+output is a plain extracted value, NOT an object with a "value" field, so {{"path": "value"}} is \
+WRONG and will fail. The same applies to a `template` step's output.
 - To build message text from a mix of your own words and extracted values, use a \
 {{"tool": "template", "args": {{"parts": {{"kind": "list", "items": [...]}}}}}} step.
 - Output ONLY the JSON object, no other text, no markdown fences.

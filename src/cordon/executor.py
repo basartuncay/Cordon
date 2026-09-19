@@ -154,7 +154,21 @@ def _resolve_ref(step_outputs: dict[str, Any], step_id: str, path: str) -> Taint
             current = current[int(part)]
         elif isinstance(current, Tainted):
             base = current.value
-            field_value = base[part] if isinstance(base, dict) else getattr(base, part)
+            if isinstance(base, dict):
+                field_value = base[part]
+            elif part == "value" and not hasattr(base, "value"):
+                # A real model sometimes refs a quarantine_extract/template
+                # step's output as "<step_id>.value" instead of the correct
+                # empty path — an understandable confusion with
+                # ExtractionSchema's own internal "value" field name and
+                # LiteralArg's "value" key, but the plain str these steps
+                # actually produce has no such attribute. Treat "value" on
+                # a value that doesn't really have one as the whole value,
+                # not a navigation error; any other made-up path segment
+                # still raises via the getattr below.
+                field_value = base
+            else:
+                field_value = getattr(base, part)
             current = Tainted(field_value, current.provenance)
         else:
             raise TypeError(f"cannot resolve path segment {part!r} on {current!r}")

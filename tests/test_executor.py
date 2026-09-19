@@ -225,6 +225,94 @@ def test_quarantine_step_preserves_input_provenance():
     assert extracted.provenance.trust == "unknown"  # inherited from s1, not laundered
 
 
+def test_ref_with_path_value_into_a_quarantine_output_resolves_like_an_empty_path():
+    """A real Haiku pilot run referenced a quarantine_extract step's
+    output as "<step_id>.value" (RefArg path="value") instead of the
+    correct empty path — an understandable confusion with
+    ExtractionSchema's own internal "value" field name and LiteralArg's
+    "value" key, but quarantine_extract's actual output is a plain str
+    with no such attribute, so this crashed with AttributeError before.
+    "value" on a scalar (non-dict, no real .value attribute) must resolve
+    to the whole value, not raise."""
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="alice@company.example",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="call me at 555-1234",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ]
+        ),
+        calendar=MockCalendar(),
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
+            PlanStep(
+                step_id="s2",
+                tool=QUARANTINE_TOOL,
+                args={"input": RefArg(step_id="s1", path="body")},
+            ),
+            PlanStep(
+                step_id="s3",
+                tool="reply_email",
+                args={
+                    "email_id": RefArg(step_id="s1", path="id"),
+                    "body": RefArg(step_id="s2", path="value"),
+                },
+            ),
+        ]
+    )
+    executor = Executor(
+        env,
+        PolicyConfig(contacts_allowlist={"alice@company.example"}),
+        confirm=deny_all,
+        quarantine=lambda _text, _schema, _instruction: "555-1234",
+    )
+    result = executor.run(plan)
+
+    assert result.outcomes[-1].status == "executed"
+    assert env.mailbox.sent[0]["body"] == "555-1234"
+
+
+def test_ref_with_a_genuinely_wrong_attribute_path_on_a_scalar_still_errors():
+    """Only the specific "value" confusion is tolerated — any other
+    made-up attribute name on a scalar output must still surface as a
+    real error, not be silently swallowed."""
+    env = Environment(mailbox=MockMailbox(inbox=[]), calendar=MockCalendar())
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="s1",
+                tool=QUARANTINE_TOOL,
+                args={"input": LiteralArg(value="some text")},
+            ),
+            PlanStep(
+                step_id="s2",
+                tool="reply_email",
+                args={
+                    "email_id": LiteralArg(value="missing-id"),
+                    "body": RefArg(step_id="s1", path="nonexistent_field"),
+                },
+            ),
+        ]
+    )
+    executor = Executor(
+        env,
+        PolicyConfig(contacts_allowlist=set()),
+        confirm=deny_all,
+        quarantine=lambda _text, _schema, _instruction: "extracted",
+    )
+    result = executor.run(plan)
+
+    assert result.outcomes[-1].status == "error"
+
+
 def test_quarantine_step_passes_schema_and_instruction_args_through():
     """schema/instruction are plan args (LiteralArg), not hardcoded — the
     executor must build a real ExtractionSchema from them and hand it,
