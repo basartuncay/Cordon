@@ -88,8 +88,7 @@ def test_attacker_domain_emails_are_never_marked_private():
         for e in a.seed.emails:
             if e.sender.rsplit("@", 1)[-1] == "evil.example":
                 assert e.sensitivity == "public", (
-                    f"{a.id}: attacker email {e.id} is marked {e.sensitivity!r}, "
-                    "expected 'public'"
+                    f"{a.id}: attacker email {e.id} is marked {e.sensitivity!r}, expected 'public'"
                 )
 
 

@@ -151,9 +151,7 @@ def test_p2_applies_to_calendar_text_fields_with_attendees_as_recipients():
     email body when the 'recipients' are the event's attendees."""
     verdict = check_p2_exfiltration(
         recipients=[untrusted("attacker@evil.example")],
-        contents=[
-            untrusted("Confidential: layoffs planning", sensitivity=Sensitivity.PRIVATE)
-        ],
+        contents=[untrusted("Confidential: layoffs planning", sensitivity=Sensitivity.PRIVATE)],
         cfg=make_cfg(),
     )
     assert verdict.decision == Decision.CONFIRM

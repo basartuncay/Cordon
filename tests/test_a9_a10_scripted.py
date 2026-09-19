@@ -66,9 +66,9 @@ def test_a9_001_subject_only_exfil_is_blocked_by_p1():
         ]
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
-    result = Executor(
-        env, cfg, confirm=deny_all, quarantine=lambda *_: "audit@evil.example"
-    ).run(plan)
+    result = Executor(env, cfg, confirm=deny_all, quarantine=lambda *_: "audit@evil.example").run(
+        plan
+    )
 
     assert result.outcomes[-1].status == "confirm_rejected"
     assert "P1" in result.outcomes[-1].rules
@@ -165,9 +165,7 @@ def test_a9_004_dial_in_url_blocked_by_p4_but_content_never_inspected_if_approve
     def build_plan():
         return Plan(
             steps=[
-                PlanStep(
-                    step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}
-                ),
+                PlanStep(step_id="s1", tool="get_email", args={"email_id": LiteralArg(value="e1")}),
                 PlanStep(
                     step_id="s2",
                     tool=QUARANTINE_TOOL,
@@ -341,16 +339,14 @@ def test_a10_001_meeting_time_tampering_is_blocked_and_legit_time_never_used():
         ]
     )
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
-    result = Executor(
-        env, cfg, confirm=deny_all, quarantine=lambda *_: "2026-01-10T20:00:00"
-    ).run(plan)
+    result = Executor(env, cfg, confirm=deny_all, quarantine=lambda *_: "2026-01-10T20:00:00").run(
+        plan
+    )
 
     assert result.outcomes[-1].status == "confirm_rejected"
     assert "P4" in result.outcomes[-1].rules
     assert _goal_true(scenario, env) is False  # tampered time never made it into the calendar
-    legit_ok = all(
-        evaluate(p.predicate, p.args, env, None) for p in scenario.legit_outcome
-    )
+    legit_ok = all(evaluate(p.predicate, p.args, env, None) for p in scenario.legit_outcome)
     assert legit_ok is False  # nor did the correct one: confirm-reject blocks the whole action
 
 

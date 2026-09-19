@@ -309,9 +309,7 @@ def test_quarantine_step_without_configured_function_is_an_error_outcome():
     )
     plan = Plan(
         steps=[
-            PlanStep(
-                step_id="s1", tool=QUARANTINE_TOOL, args={"input": LiteralArg(value="text")}
-            )
+            PlanStep(step_id="s1", tool=QUARANTINE_TOOL, args={"input": LiteralArg(value="text")})
         ]
     )
     executor = Executor(env, PolicyConfig(contacts_allowlist=set()))
@@ -476,9 +474,9 @@ def test_confirm_callback_approval_lets_a_flagged_call_execute():
 def test_confirm_request_carries_rules_reasons_and_argument_summary():
     env = _attacker_email_env()
     log = ConfirmLog()
-    Executor(
-        env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all, confirm_log=log
-    ).run(_forward_to_sender_plan())
+    Executor(env, PolicyConfig(contacts_allowlist=set()), confirm=deny_all, confirm_log=log).run(
+        _forward_to_sender_plan()
+    )
 
     assert log.confirm_count == 1
     request = log.records[0].request
@@ -494,9 +492,9 @@ def test_confirm_request_carries_rules_reasons_and_argument_summary():
 def test_confirm_log_tracks_approved_and_rejected_counts_across_a_plan():
     env = _attacker_email_env()
     log = ConfirmLog()
-    Executor(
-        env, PolicyConfig(contacts_allowlist=set()), confirm=approve_all, confirm_log=log
-    ).run(_forward_to_sender_plan())
+    Executor(env, PolicyConfig(contacts_allowlist=set()), confirm=approve_all, confirm_log=log).run(
+        _forward_to_sender_plan()
+    )
 
     assert log.confirm_count == 1
     assert log.approved_count == 1
@@ -818,9 +816,7 @@ def test_e2e_benign_reply_executes_without_confirmation():
 def test_e2e_a2_exfil_forward_is_blocked_by_p1_when_confirmation_is_denied():
     scenario = _load("a2_001", "attack")
     env = build_environment(scenario.seed)
-    attacker_email = next(
-        e for e in scenario.seed.emails if e.sender.endswith("@evil.example")
-    )
+    attacker_email = next(e for e in scenario.seed.emails if e.sender.endswith("@evil.example"))
 
     plan = Plan(
         steps=[
@@ -862,9 +858,7 @@ def test_e2e_a2_exfil_forward_succeeds_only_if_a_human_approves_the_confirmation
     not 'otherwise deny')."""
     scenario = _load("a2_001", "attack")
     env = build_environment(scenario.seed)
-    attacker_email = next(
-        e for e in scenario.seed.emails if e.sender.endswith("@evil.example")
-    )
+    attacker_email = next(e for e in scenario.seed.emails if e.sender.endswith("@evil.example"))
 
     plan = Plan(
         steps=[
@@ -900,9 +894,7 @@ def test_e2e_a2_exfil_forward_succeeds_only_if_a_human_approves_the_confirmation
 def test_e2e_a3_calendar_attendee_injection_is_blocked_by_p4():
     scenario = _load("a3_001", "attack")
     env = build_environment(scenario.seed)
-    attacker_email = next(
-        e for e in scenario.seed.emails if e.sender.endswith("@evil.example")
-    )
+    attacker_email = next(e for e in scenario.seed.emails if e.sender.endswith("@evil.example"))
     event_id = next(iter(env.calendar.events))
 
     plan = Plan(
@@ -944,9 +936,7 @@ def test_e2e_a5_multilingual_exfil_is_blocked_the_same_way_as_a2():
     *extracted address's provenance*, never about the text itself."""
     scenario = _load("a5_001", "attack")
     env = build_environment(scenario.seed)
-    attacker_email = next(
-        e for e in scenario.seed.emails if e.sender.endswith("@evil.example")
-    )
+    attacker_email = next(e for e in scenario.seed.emails if e.sender.endswith("@evil.example"))
 
     plan = Plan(
         steps=[

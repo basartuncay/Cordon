@@ -151,9 +151,7 @@ def _run_cordon(
         o.status == "safe_abort_empty_result" for o in exec_result.outcomes
     )
     policy_evaluated_count = (
-        sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS)
-        if enforce_policy
-        else 0
+        sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS) if enforce_policy else 0
     )
 
     return RunResult(

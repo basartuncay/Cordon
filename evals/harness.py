@@ -192,9 +192,9 @@ def run_harness(
 ) -> tuple[RunSummary, list[ScenarioResult], list[ScenarioResult]]:
     started_at = datetime.now(UTC).isoformat()
 
-    ordered: list[tuple[str, AttackScenario | BenignScenario]] = [
-        ("benign", t) for t in tasks
-    ] + [("attack", a) for a in attacks]
+    ordered: list[tuple[str, AttackScenario | BenignScenario]] = [("benign", t) for t in tasks] + [
+        ("attack", a) for a in attacks
+    ]
     scenarios_total = len(ordered)
 
     benign_results: list[ScenarioResult] = []
@@ -230,12 +230,8 @@ def run_harness(
         scenarios_completed=scenarios_completed,
         complete=complete,
         stop_reason=stop_reason,
-        total_input_tokens=sum(
-            r.input_tokens for r in benign_results + attack_results
-        ),
-        total_output_tokens=sum(
-            r.output_tokens for r in benign_results + attack_results
-        ),
+        total_input_tokens=sum(r.input_tokens for r in benign_results + attack_results),
+        total_output_tokens=sum(r.output_tokens for r in benign_results + attack_results),
         estimated_cost_usd=cost_so_far,
         pricing_verified=cfg.pricing_verified,
         total_confirm_count=sum(r.confirm_count for r in benign_results + attack_results),

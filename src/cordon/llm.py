@@ -151,9 +151,7 @@ def default_model_config() -> ModelConfig:
         # until then treat any printed cost estimate as a rough order of
         # magnitude, not a bill.
         price_input_per_mtok_usd=float(os.environ.get("CORDON_PRICE_INPUT_PER_MTOK_USD", "1.0")),
-        price_output_per_mtok_usd=float(
-            os.environ.get("CORDON_PRICE_OUTPUT_PER_MTOK_USD", "5.0")
-        ),
+        price_output_per_mtok_usd=float(os.environ.get("CORDON_PRICE_OUTPUT_PER_MTOK_USD", "5.0")),
         pricing_verified=os.environ.get("CORDON_PRICING_VERIFIED", "false").strip().lower()
         == "true",
     )

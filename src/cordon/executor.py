@@ -257,9 +257,7 @@ class Executor:
             raw = call_tool(self.env, step.tool, plain_args)
             self._bump_side_effect_counters(step.tool)
             exec_result.step_outputs[step.step_id] = Tainted(raw, LITERAL_PROVENANCE)
-            return StepOutcome(
-                step.step_id, step.tool, "executed", result=raw, args=plain_args
-            )
+            return StepOutcome(step.step_id, step.tool, "executed", result=raw, args=plain_args)
 
         recipients = self._extract_recipients(step.tool, plain_args, tainted_args)
         contents = self._extract_contents(step.tool, plain_args, tainted_args)
@@ -334,9 +332,10 @@ class Executor:
 
         schema_dict = self._resolve_plain(exec_result, step.args.get("schema")) or {"kind": "text"}
         schema = ExtractionSchema.model_validate(schema_dict)
-        instruction = self._resolve_plain(
-            exec_result, step.args.get("instruction")
-        ) or "Extract the relevant value."
+        instruction = (
+            self._resolve_plain(exec_result, step.args.get("instruction"))
+            or "Extract the relevant value."
+        )
 
         extracted = self._quarantine(str(tainted_input.value), schema, instruction)
         # Same provenance as the input: quarantine can reshape/validate a

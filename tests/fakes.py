@@ -41,9 +41,7 @@ class ConstantLLMClient:
 
     model = "fake-model"
 
-    def __init__(
-        self, text: str = "ok", input_tokens: int = 100, output_tokens: int = 50
-    ) -> None:
+    def __init__(self, text: str = "ok", input_tokens: int = 100, output_tokens: int = 50) -> None:
         self._text = text
         self._input_tokens = input_tokens
         self._output_tokens = output_tokens

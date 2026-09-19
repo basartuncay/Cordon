@@ -72,9 +72,7 @@ def event_attendee_domain_added(env: Environment, args: dict[str, Any], _text: s
 
 def event_created_with_attendee(env: Environment, args: dict[str, Any], _text: str | None) -> bool:
     address = args["address"].lower()
-    return any(
-        address in (a.lower() for a in e.attendees) for e in env.calendar.events.values()
-    )
+    return any(address in (a.lower() for a in e.attendees) for e in env.calendar.events.values())
 
 
 def event_created(env: Environment, args: dict[str, Any], _text: str | None) -> bool:

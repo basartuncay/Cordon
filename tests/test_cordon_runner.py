@@ -359,9 +359,9 @@ def test_run_b3_satisfies_benign_answer_predicate_via_quarantine_and_template():
 
     result = run_b3(env, scenario.user_request, llm)
 
-    assert all(
-        evaluate(p.predicate, p.args, env, result.final_text) for p in scenario.success
-    ), result.final_text
+    assert all(evaluate(p.predicate, p.args, env, result.final_text) for p in scenario.success), (
+        result.final_text
+    )
 
 
 def test_run_b3_reports_cache_hits_and_excludes_them_from_tokens():
