@@ -51,10 +51,14 @@ text (subject/body), you MUST extract it with quarantine_extract, never ref a ma
 - Calendar event records have EXACTLY these fields: id, title, start, end, organizer, attendees, \
 description, location.
 - To use an address/date/id extracted from an email or event body, first read it, then add a \
-{{"tool": "quarantine_extract", "args": {{"input": {{"kind": "ref", ...}}, \
-"schema": {{"kind": "email|date|id|enum|text", ...}}, "instruction": "..."}}}} step to pull out \
-the specific value you need, then ref that step's output. The "schema" object only supports the \
-fields kind, enum_values, and max_length — no other keys.
+quarantine_extract step to pull out the specific value you need, then ref that step's output. \
+Its "schema" arg is a LITERAL wrapping an object with fields kind (one of email/date/id/enum/\
+text — NOT one of literal/ref/list), enum_values, and max_length. Full example: \
+{{"step_id": "extract1", "tool": "quarantine_extract", "args": {{"input": {{"kind": "ref", \
+"step_id": "s1", "path": "body"}}, "schema": {{"kind": "literal", "value": {{"kind": "email", \
+"max_length": 100}}}}, "instruction": {{"kind": "literal", "value": "extract the address"}}}}}}. \
+Note "schema"'s own value has a nested "kind" too (email/date/id/enum/text) — do not confuse it \
+with the outer arg-value "kind" (which must still be "literal" here).
 - To build message text from a mix of your own words and extracted values, use a \
 {{"tool": "template", "args": {{"parts": {{"kind": "list", "items": [...]}}}}}} step.
 - Output ONLY the JSON object, no other text, no markdown fences.
@@ -70,6 +74,32 @@ class PlannerError(RuntimeError):
 
 def _build_system_prompt() -> str:
     return SYSTEM_PROMPT_TEMPLATE.format(tool_schemas=json.dumps(TOOL_SCHEMAS, indent=2))
+
+
+# ExtractionSchema's own "kind" field (email/date/id/enum/text) collides
+# closely enough with ArgValue's "kind" discriminator (literal/ref/list)
+# that a real model sometimes emits a quarantine_extract step's "schema"
+# arg unwrapped, e.g. {"schema": {"kind": "email"}} instead of the correct
+# {"schema": {"kind": "literal", "value": {"kind": "email"}}}. Tolerating
+# it here is cheaper than burning a retry (or exhausting all of them) on a
+# mistake the model makes for a structural reason, not a careless one.
+_EXTRACTION_SCHEMA_KINDS = {"email", "date", "id", "enum", "text"}
+
+
+def _normalize_unwrapped_quarantine_schemas(raw: dict[str, Any]) -> dict[str, Any]:
+    steps = raw.get("steps")
+    if not isinstance(steps, list):
+        return raw
+    for step in steps:
+        if not isinstance(step, dict) or step.get("tool") != "quarantine_extract":
+            continue
+        args = step.get("args")
+        if not isinstance(args, dict):
+            continue
+        schema = args.get("schema")
+        if isinstance(schema, dict) and schema.get("kind") in _EXTRACTION_SCHEMA_KINDS:
+            args["schema"] = {"kind": "literal", "value": schema}
+    return raw
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -124,6 +154,7 @@ def make_plan(
 
         try:
             raw = _extract_json(response.text)
+            raw = _normalize_unwrapped_quarantine_schemas(raw)
             return Plan.model_validate(raw)
         except (json.JSONDecodeError, ValidationError) as exc:
             last_error = exc

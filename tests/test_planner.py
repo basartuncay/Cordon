@@ -127,6 +127,84 @@ def test_make_plan_records_a_cache_hit_and_does_not_count_its_tokens():
     assert usage.output_tokens == 0
 
 
+def test_make_plan_accepts_a_quarantine_schema_arg_given_without_the_literal_wrapper():
+    """ExtractionSchema's own "kind" field (email/date/id/enum/text) and
+    ArgValue's "kind" discriminator (literal/ref/list) collide closely
+    enough that a real model sometimes emits a quarantine_extract step's
+    "schema" arg as a bare ExtractionSchema dict instead of wrapping it in
+    a literal, e.g. {"schema": {"kind": "email"}} instead of {"schema":
+    {"kind": "literal", "value": {"kind": "email"}}}. That should be
+    tolerated, not burn a retry (or worse, exhaust all of them)."""
+    unwrapped = json.dumps(
+        {
+            "steps": [
+                {
+                    "step_id": "s1",
+                    "tool": "quarantine_extract",
+                    "args": {
+                        "input": {"kind": "literal", "value": "some text"},
+                        "schema": {"kind": "email", "max_length": 100},
+                        "instruction": {"kind": "literal", "value": "extract the address"},
+                    },
+                }
+            ]
+        }
+    )
+    llm = TextScriptLLMClient([unwrapped])
+    plan = make_plan("Do something.", llm)
+    assert len(llm.calls) == 1  # no retry needed
+    schema_arg = plan.steps[0].args["schema"]
+    assert schema_arg.kind == "literal"
+    assert schema_arg.value == {"kind": "email", "max_length": 100}
+
+
+def test_make_plan_leaves_an_already_wrapped_quarantine_schema_arg_untouched():
+    wrapped = json.dumps(
+        {
+            "steps": [
+                {
+                    "step_id": "s1",
+                    "tool": "quarantine_extract",
+                    "args": {
+                        "input": {"kind": "literal", "value": "some text"},
+                        "schema": {"kind": "literal", "value": {"kind": "id"}},
+                    },
+                }
+            ]
+        }
+    )
+    llm = TextScriptLLMClient([wrapped])
+    plan = make_plan("Do something.", llm)
+    schema_arg = plan.steps[0].args["schema"]
+    assert schema_arg.kind == "literal"
+    assert schema_arg.value == {"kind": "id"}
+
+
+def test_make_plan_leaves_a_ref_quarantine_schema_arg_untouched():
+    """A schema arg that refs an earlier step's output (unusual, but
+    structurally valid) must not be mistaken for an unwrapped
+    ExtractionSchema just because it's a dict shape with no "kind" match."""
+    ref_schema = json.dumps(
+        {
+            "steps": [
+                {"step_id": "s0", "tool": "list_emails", "args": {}},
+                {
+                    "step_id": "s1",
+                    "tool": "quarantine_extract",
+                    "args": {
+                        "input": {"kind": "literal", "value": "some text"},
+                        "schema": {"kind": "ref", "step_id": "s0", "path": "0.subject"},
+                    },
+                },
+            ]
+        }
+    )
+    llm = TextScriptLLMClient([ref_schema])
+    plan = make_plan("Do something.", llm)
+    schema_arg = plan.steps[1].args["schema"]
+    assert schema_arg.kind == "ref"
+
+
 def test_make_plan_without_cache_stats_still_works_normally():
     llm = TextScriptLLMClient([VALID_PLAN_JSON], from_cache=[True])
     plan = make_plan("Summarize my inbox.", llm)
