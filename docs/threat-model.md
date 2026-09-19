@@ -74,6 +74,39 @@ write. The eval report splits ASR along this line:
 "binary CONFIRM" gap above for why this is expected to read low under
 auto-deny.
 
+## Pre-flight audit: did the environment-isolation bug taint earlier runs?
+
+`e44135f` fixed `build_environment()` sharing mutable `Email`/`CalendarEvent`
+objects between the returned `Environment` and the scenario's `SeedData` (and
+between environments built from the same seed) — see that commit's message.
+Before running the M3 Stage B full corpus evals, we audited whether any
+*already-produced* result file in `evals/results/` (gitignored, but present
+locally) could have been corrupted by it. It could not:
+
+- The bug requires `build_environment()` to be called more than once, in the
+  same process, on the *same* scenario object (identity, not just id) — only
+  then do the pre-fix shared object references matter.
+- Every result file was produced by `evals/harness.py::main()`, invoked via
+  `make eval` — one `python` process per invocation. `load_attacks`/
+  `load_benign_tasks` are called once per process with no caching, and each
+  scenario appears exactly once in `run_harness`'s `ordered` list, so
+  `build_environment` is called exactly once per scenario per process.
+  Separate CLI invocations are separate OS processes, so cross-invocation
+  aliasing was never possible either.
+- The only place in the codebase that called `build_environment` twice on
+  the same scenario object *before* the fix existed is
+  `tests/test_a9_a10_scripted.py::test_a9_004_...`. Tracing its actual
+  mutations (a `confirm_rejected` `create_event` that performs no mutation,
+  followed by a `confirm_approved` `create_event` that only appends a new
+  dict entry to its own environment's calendar) shows the pre-fix aliasing
+  never touched a shared object in that specific test, so its assertions
+  were correct both before and after the fix.
+
+**Conclusion: no result file in `evals/results/` is affected; nothing needs
+re-running because of this bug.** `evals/worst_case.py`, the only other
+caller that could plausibly build multiple environments per scenario per
+process, was added in the same commit as the fix and never ran unfixed.
+
 ## Known gaps
 
 Residual risks the current policy engine (P1-P5) does **not** close, even
