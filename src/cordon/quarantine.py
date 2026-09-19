@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, create_model, model_validator
 
-from cordon.llm import LLMClient, LLMUsage
+from cordon.llm import CacheStats, LLMClient, LLMUsage
 
 SYSTEM_PROMPT = (
     "You extract exactly one specific value from a piece of text. You have "
@@ -79,15 +79,23 @@ def extract(
     instruction: str,
     llm: LLMClient,
     usage: LLMUsage | None = None,
+    cache_stats: CacheStats | None = None,
 ) -> str:
     """Runs the quarantine LLM once and validates its output against
     `schema`. Raises QuarantineError if the output doesn't validate — the
-    caller must not use anything from a rejected extraction."""
+    caller must not use anything from a rejected extraction. A cache hit's
+    tokens are never added to ``usage``; ``cache_stats`` (if given) always
+    gets a hit or a miss."""
     prompt = f"{instruction}\n\n---\n{text}\n---"
     response = llm.run(
         system=SYSTEM_PROMPT, messages=[{"role": "user", "content": prompt}], tools=None
     )
-    if usage is not None:
+    if cache_stats is not None:
+        if response.from_cache:
+            cache_stats.hits += 1
+        else:
+            cache_stats.misses += 1
+    if usage is not None and not response.from_cache:
         usage.input_tokens += response.usage.input_tokens
         usage.output_tokens += response.usage.output_tokens
 

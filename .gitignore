@@ -29,6 +29,7 @@ htmlcov/
 
 # Eval outputs
 evals/results/
+evals/.cache/
 
 # Editors / OS
 .vscode/

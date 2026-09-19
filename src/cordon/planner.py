@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from cordon.llm import LLMClient, LLMUsage
+from cordon.llm import CacheStats, LLMClient, LLMUsage
 from cordon.plan import Plan
 from cordon.tools.dispatch import TOOL_SCHEMAS
 
@@ -67,13 +67,20 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(text)
 
 
-def make_plan(user_request: str, llm: LLMClient, usage: LLMUsage | None = None) -> Plan:
+def make_plan(
+    user_request: str,
+    llm: LLMClient,
+    usage: LLMUsage | None = None,
+    cache_stats: CacheStats | None = None,
+) -> Plan:
     """Runs the planner LLM and returns a validated Plan, retrying up to
     MAX_RETRIES times but only in response to a parse/validation failure.
 
     If ``usage`` is given, token counts across every attempt are added to
-    it in place (a caller that needs cost accounting passes its own
-    accumulator; callers that don't care can ignore the parameter).
+    it in place — except for a cache hit's tokens, which are never billed
+    (a caller that needs cost accounting passes its own accumulator;
+    callers that don't care can ignore the parameter). If ``cache_stats``
+    is given, every attempt increments its hits or misses.
     """
     system = _build_system_prompt()
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_request}]
@@ -83,8 +90,14 @@ def make_plan(user_request: str, llm: LLMClient, usage: LLMUsage | None = None) 
     last_error: Exception = PlannerError("planner produced no output")
     for _attempt in range(MAX_RETRIES + 1):
         response = llm.run(system=system, messages=messages, tools=None)
-        usage.input_tokens += response.usage.input_tokens
-        usage.output_tokens += response.usage.output_tokens
+        if cache_stats is not None:
+            if response.from_cache:
+                cache_stats.hits += 1
+            else:
+                cache_stats.misses += 1
+        if not response.from_cache:
+            usage.input_tokens += response.usage.input_tokens
+            usage.output_tokens += response.usage.output_tokens
 
         if not response.text:
             last_error = PlannerError("planner returned no text")

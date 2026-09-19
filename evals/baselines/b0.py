@@ -45,6 +45,12 @@ class RunResult:
     # Every side-effecting call the policy engine evaluated, regardless of
     # verdict. Always 0 for B0/B1/B2 (no policy engine, or switched off).
     policy_evaluated_count: int = 0
+    # Disk-cache hits/misses for this run's LLM calls (evals.cache). A hit
+    # never counts toward input_tokens/output_tokens/cost — see
+    # cordon.llm.CacheStats. B0/B1 populate these too if their harness-
+    # supplied client is cache-wrapped; 0/0 if it isn't.
+    cache_hits: int = 0
+    cache_misses: int = 0
 
 
 def run_b0(env: Environment, user_request: str, llm: LLMClient) -> RunResult:
@@ -54,8 +60,12 @@ def run_b0(env: Environment, user_request: str, llm: LLMClient) -> RunResult:
     for turn in range(1, MAX_TURNS + 1):
         response = llm.run(system=SYSTEM_PROMPT, messages=messages, tools=TOOL_SCHEMAS)
         result.turns = turn
-        result.input_tokens += response.usage.input_tokens
-        result.output_tokens += response.usage.output_tokens
+        if response.from_cache:
+            result.cache_hits += 1
+        else:
+            result.cache_misses += 1
+            result.input_tokens += response.usage.input_tokens
+            result.output_tokens += response.usage.output_tokens
 
         if not response.tool_calls:
             result.final_text = response.text

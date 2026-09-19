@@ -28,6 +28,7 @@ from cordon.llm import (
     default_model_config,
     estimate_cost_usd,
 )
+from evals.cache import CachingLLMClient
 from evals.predicates import evaluate
 from evals.report import print_report
 from evals.scenario import (
@@ -76,6 +77,10 @@ class ScenarioResult:
     # regardless of the verdict — distinct from confirm_count, which only
     # counts calls that specifically landed on CONFIRM.
     policy_evaluated_count: int = 0
+    # Disk-cache hits/misses for this scenario's LLM calls. A hit never
+    # counts toward input_tokens/output_tokens/cost.
+    cache_hits: int = 0
+    cache_misses: int = 0
 
 
 @dataclass
@@ -95,6 +100,15 @@ class RunSummary:
     total_confirm_approved_count: int = 0
     total_errored_count: int = 0
     total_policy_evaluated_count: int = 0
+    # What the config specified for each role, regardless of whether this
+    # baseline actually has separate roles (B0/B1 only ever use `model`;
+    # B2/B3 currently default to a single shared client too — see
+    # cordon_runner's planner_llm/quarantine_llm params for the plumbing
+    # that would let them differ).
+    planner_model: str = ""
+    quarantine_model: str = ""
+    total_cache_hits: int = 0
+    total_cache_misses: int = 0
 
 
 def _resolve_baseline(name: str):
@@ -150,6 +164,8 @@ def run_scenario(
         errored=result.errored,
         legit_outcome_success=legit_outcome_success,
         policy_evaluated_count=result.policy_evaluated_count,
+        cache_hits=result.cache_hits,
+        cache_misses=result.cache_misses,
     )
 
 
@@ -219,6 +235,10 @@ def run_harness(
         total_policy_evaluated_count=sum(
             r.policy_evaluated_count for r in benign_results + attack_results
         ),
+        planner_model=cfg.planner_model,
+        quarantine_model=cfg.quarantine_model,
+        total_cache_hits=sum(r.cache_hits for r in benign_results + attack_results),
+        total_cache_misses=sum(r.cache_misses for r in benign_results + attack_results),
     )
     return summary, benign_results, attack_results
 
@@ -271,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = default_model_config()
 
     try:
-        llm = AnthropicClient(model=cfg.baseline_model)
+        llm: LLMClient = CachingLLMClient(AnthropicClient(model=cfg.baseline_model))
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

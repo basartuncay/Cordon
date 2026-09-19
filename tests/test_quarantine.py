@@ -11,6 +11,7 @@ from datetime import date
 
 import pytest
 
+from cordon.llm import CacheStats, LLMUsage
 from cordon.quarantine import ExtractionSchema, QuarantineError, extract
 from tests.fakes import TextScriptLLMClient
 
@@ -105,8 +106,6 @@ def test_extract_never_grants_the_quarantine_llm_tool_use():
 
 
 def test_extract_accumulates_usage_into_a_shared_accumulator():
-    from cordon.llm import LLMUsage
-
     llm = TextScriptLLMClient(["a@b.example", "c@d.example"], input_tokens=15, output_tokens=5)
     schema = ExtractionSchema(kind="email")
     usage = LLMUsage()
@@ -114,3 +113,25 @@ def test_extract_accumulates_usage_into_a_shared_accumulator():
     extract("text2", schema, "extract", llm, usage=usage)
     assert usage.input_tokens == 30
     assert usage.output_tokens == 10
+
+
+def test_extract_records_a_cache_miss_and_counts_its_tokens():
+    llm = TextScriptLLMClient(["a@b.example"], input_tokens=15, output_tokens=5, from_cache=[False])
+    usage = LLMUsage()
+    stats = CacheStats()
+    extract("text", ExtractionSchema(kind="email"), "extract", llm, usage=usage, cache_stats=stats)
+    assert stats.misses == 1
+    assert stats.hits == 0
+    assert usage.input_tokens == 15
+    assert usage.output_tokens == 5
+
+
+def test_extract_records_a_cache_hit_and_does_not_count_its_tokens():
+    llm = TextScriptLLMClient(["a@b.example"], input_tokens=15, output_tokens=5, from_cache=[True])
+    usage = LLMUsage()
+    stats = CacheStats()
+    extract("text", ExtractionSchema(kind="email"), "extract", llm, usage=usage, cache_stats=stats)
+    assert stats.hits == 1
+    assert stats.misses == 0
+    assert usage.input_tokens == 0
+    assert usage.output_tokens == 0

@@ -27,6 +27,18 @@ class LLMResponse:
     tool_calls: list[dict[str, Any]]
     stop_reason: str
     usage: LLMUsage = field(default_factory=LLMUsage)
+    # Set by a caching wrapper (evals.cache.CachingLLMClient) when this
+    # response came from disk instead of a real API call. Callers that
+    # accumulate spend (planner.make_plan, quarantine.extract, the B0/B1
+    # tool loops) check this and skip adding a cache hit's tokens to any
+    # cost estimate.
+    from_cache: bool = False
+
+
+@dataclass
+class CacheStats:
+    hits: int = 0
+    misses: int = 0
 
 
 class LLMClient(Protocol):
@@ -124,17 +136,23 @@ class ModelConfig:
 def default_model_config() -> ModelConfig:
     load_dotenv()
     return ModelConfig(
-        baseline_model=os.environ.get("CORDON_BASELINE_MODEL", "claude-sonnet-5"),
-        planner_model=os.environ.get("CORDON_PLANNER_MODEL", "claude-sonnet-5"),
+        # Every role defaults to Haiku for now (cheap enough to pilot with;
+        # override any of these three independently via env/.env when a
+        # stronger planner model is warranted).
+        baseline_model=os.environ.get("CORDON_BASELINE_MODEL", "claude-haiku-4-5-20251001"),
+        planner_model=os.environ.get("CORDON_PLANNER_MODEL", "claude-haiku-4-5-20251001"),
         quarantine_model=os.environ.get("CORDON_QUARANTINE_MODEL", "claude-haiku-4-5-20251001"),
-        token_budget=int(os.environ.get("CORDON_TOKEN_BUDGET", "200000")),
-        # Placeholder $/MTok figures — NOT verified against a current pricing
-        # page. Set CORDON_PRICING_VERIFIED=true once you've checked them for
-        # the model actually configured above; until then treat any printed
-        # cost estimate as a rough order of magnitude, not a bill.
-        price_input_per_mtok_usd=float(os.environ.get("CORDON_PRICE_INPUT_PER_MTOK_USD", "3.0")),
+        # --budget-usd is the primary spend guard in practice; this is a
+        # generous per-run ceiling mainly meant to catch a runaway loop.
+        token_budget=int(os.environ.get("CORDON_TOKEN_BUDGET", "700000")),
+        # Placeholder $/MTok figures for Haiku-class pricing — NOT verified
+        # against a current pricing page. Set CORDON_PRICING_VERIFIED=true
+        # once you've checked them for the model actually configured above;
+        # until then treat any printed cost estimate as a rough order of
+        # magnitude, not a bill.
+        price_input_per_mtok_usd=float(os.environ.get("CORDON_PRICE_INPUT_PER_MTOK_USD", "1.0")),
         price_output_per_mtok_usd=float(
-            os.environ.get("CORDON_PRICE_OUTPUT_PER_MTOK_USD", "15.0")
+            os.environ.get("CORDON_PRICE_OUTPUT_PER_MTOK_USD", "5.0")
         ),
         pricing_verified=os.environ.get("CORDON_PRICING_VERIFIED", "false").strip().lower()
         == "true",

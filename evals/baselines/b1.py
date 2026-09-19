@@ -41,8 +41,12 @@ def run_b1(env: Environment, user_request: str, llm: LLMClient) -> RunResult:
     for turn in range(1, MAX_TURNS + 1):
         response = llm.run(system=SYSTEM_PROMPT, messages=messages, tools=TOOL_SCHEMAS)
         result.turns = turn
-        result.input_tokens += response.usage.input_tokens
-        result.output_tokens += response.usage.output_tokens
+        if response.from_cache:
+            result.cache_hits += 1
+        else:
+            result.cache_misses += 1
+            result.input_tokens += response.usage.input_tokens
+            result.output_tokens += response.usage.output_tokens
 
         if not response.tool_calls:
             result.final_text = response.text

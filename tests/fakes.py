@@ -11,6 +11,7 @@ from cordon.llm import LLMResponse, LLMUsage
 class ScriptedTurn:
     text: str | None
     tool_calls: list[dict]
+    from_cache: bool = False
 
 
 class FakeLLMClient:
@@ -30,6 +31,7 @@ class FakeLLMClient:
             tool_calls=turn.tool_calls,
             stop_reason="tool_use" if turn.tool_calls else "end_turn",
             usage=LLMUsage(input_tokens=10, output_tokens=5),
+            from_cache=turn.from_cache,
         )
 
 
@@ -68,24 +70,38 @@ class TextScriptLLMClient:
     """Replays a fixed script of plain-text responses (no tool calls) and
     records every call made to .run(), so a test can assert what the
     caller actually sent — e.g. that the planner never grants itself real
-    tool-calling capability (``tools`` should always be ``None``)."""
+    tool-calling capability (``tools`` should always be ``None``).
+
+    ``from_cache`` optionally marks specific calls (by index) as cache
+    hits, for testing callers that skip accumulating a hit's tokens
+    (planner.make_plan, quarantine.extract) — see cordon.llm.CacheStats.
+    """
 
     model = "fake-model"
 
-    def __init__(self, texts: list[str], input_tokens: int = 20, output_tokens: int = 10) -> None:
+    def __init__(
+        self,
+        texts: list[str],
+        input_tokens: int = 20,
+        output_tokens: int = 10,
+        from_cache: list[bool] | None = None,
+    ) -> None:
         self._texts = list(texts)
         self._call_count = 0
         self._input_tokens = input_tokens
         self._output_tokens = output_tokens
+        self._from_cache = from_cache or [False] * len(texts)
         self.calls: list[RecordedCall] = []
 
     def run(self, *, system, messages, tools=None):
         self.calls.append(RecordedCall(system=system, messages=list(messages), tools=tools))
         text = self._texts[self._call_count]
+        from_cache = self._from_cache[self._call_count]
         self._call_count += 1
         return LLMResponse(
             text=text,
             tool_calls=[],
             stop_reason="end_turn",
             usage=LLMUsage(input_tokens=self._input_tokens, output_tokens=self._output_tokens),
+            from_cache=from_cache,
         )

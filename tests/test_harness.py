@@ -24,8 +24,8 @@ from tests.fakes import ConstantLLMClient
 def make_cfg(token_budget: int = 200_000) -> ModelConfig:
     return ModelConfig(
         baseline_model="fake-model",
-        planner_model="fake-model",
-        quarantine_model="fake-model",
+        planner_model="fake-planner-model",
+        quarantine_model="fake-quarantine-model",
         token_budget=token_budget,
         price_input_per_mtok_usd=3.0,
         price_output_per_mtok_usd=15.0,
@@ -197,3 +197,29 @@ def test_effective_baseline_swaps_b3_to_b2_only_with_no_policy_flag():
     assert _effective_baseline_name("b0", no_policy=True) == "b0"
     assert _effective_baseline_name("b2", no_policy=True) == "b2"
 
+
+def test_run_harness_summary_includes_planner_and_quarantine_model_from_config():
+    tasks = [make_benign_task("b1")]
+    llm = ConstantLLMClient()
+
+    summary, _, _ = run_harness(run_b0, llm, "b0", tasks, [], make_cfg())
+
+    assert summary.planner_model == "fake-planner-model"
+    assert summary.quarantine_model == "fake-quarantine-model"
+
+
+def test_run_harness_aggregates_cache_hits_and_misses():
+    tasks = [make_benign_task("b1"), make_benign_task("b2")]
+
+    def fake_run_with_cache(env, user_request, llm):
+        from evals.baselines.b0 import RunResult
+
+        return RunResult(turns=1, cache_hits=1, cache_misses=2)
+
+    summary, benign_results, _ = run_harness(
+        fake_run_with_cache, ConstantLLMClient(), "b0", tasks, [], make_cfg()
+    )
+
+    assert summary.total_cache_hits == 2
+    assert summary.total_cache_misses == 4
+    assert benign_results[0].cache_hits == 1

@@ -2,20 +2,22 @@
 
 Both drive the same planner -> quarantine -> executor pipeline; whether
 policy verdicts are actually enforced is the only difference. Same
-``(env, user_request, llm) -> RunResult`` interface as B0/B1, using ONE llm
-client for both the planner and quarantine roles, so every baseline plugs
-into the harness identically. (A real deployment could use different
-models for each via ``ModelConfig.planner_model`` / ``.quarantine_model`` —
-that's a config knob for later, not something the eval harness's
-one-model-per-baseline interface exercises here.)
+``(env, user_request, llm) -> RunResult`` interface as B0/B1 by default,
+using ONE llm client for both the planner and quarantine roles, so every
+baseline plugs into the harness identically. ``_run_cordon`` additionally
+accepts separate ``planner_llm``/``quarantine_llm`` for callers that want
+different models per role (e.g. a stronger planner, a cheap quarantine
+model) — run_b2/run_b3's public signature stays the one-client default.
 """
 
 from __future__ import annotations
 
-from cordon.confirm import AutoDenyDecider, ConfirmDecider, ConfirmLog
+import os
+
+from cordon.confirm import AutoApproveDecider, AutoDenyDecider, ConfirmDecider, ConfirmLog
 from cordon.env import Environment
 from cordon.executor import ExecutionResult, Executor
-from cordon.llm import LLMClient, LLMUsage
+from cordon.llm import CacheStats, LLMClient, LLMUsage
 from cordon.plan import QUARANTINE_TOOL, TEMPLATE_TOOL
 from cordon.planner import PlannerError, make_plan
 from cordon.policy import SIDE_EFFECT_TOOLS, PolicyConfig
@@ -72,6 +74,16 @@ def _final_text(exec_result: ExecutionResult) -> str:
     return "\n".join(lines)
 
 
+def _default_confirm_decider() -> ConfirmDecider:
+    """CORDON_CONFIRM_MODE=approve for the worst-case (blind rubber-stamp)
+    eval mode; anything else (including unset) is the defense-favoring
+    "deny" default — nothing risky ever gets approved. Has no observable
+    effect on B2, which never reaches a CONFIRM decision in the first
+    place (enforce_policy=False skips evaluate_call entirely)."""
+    mode = os.environ.get("CORDON_CONFIRM_MODE", "deny").strip().lower()
+    return AutoApproveDecider() if mode == "approve" else AutoDenyDecider()
+
+
 def _run_cordon(
     env: Environment,
     user_request: str,
@@ -79,13 +91,18 @@ def _run_cordon(
     *,
     enforce_policy: bool,
     confirm: ConfirmDecider | None = None,
+    planner_llm: LLMClient | None = None,
+    quarantine_llm: LLMClient | None = None,
 ) -> RunResult:
+    planner_llm = planner_llm or llm
+    quarantine_llm = quarantine_llm or llm
     usage = LLMUsage()
-    confirm = confirm or AutoDenyDecider()
+    cache_stats = CacheStats()
+    confirm = confirm or _default_confirm_decider()
     confirm_log = ConfirmLog()
 
     try:
-        plan = make_plan(user_request, llm, usage=usage)
+        plan = make_plan(user_request, planner_llm, usage=usage, cache_stats=cache_stats)
     except PlannerError:
         return RunResult(
             turns=0,
@@ -93,10 +110,14 @@ def _run_cordon(
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             errored=True,
+            cache_hits=cache_stats.hits,
+            cache_misses=cache_stats.misses,
         )
 
     def quarantine_fn(text: str, schema, instruction: str) -> str:
-        return quarantine_extract(text, schema, instruction, llm, usage=usage)
+        return quarantine_extract(
+            text, schema, instruction, quarantine_llm, usage=usage, cache_stats=cache_stats
+        )
 
     cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
     executor = Executor(
@@ -132,6 +153,8 @@ def _run_cordon(
         confirm_approved_count=confirm_log.approved_count,
         errored=errored,
         policy_evaluated_count=policy_evaluated_count,
+        cache_hits=cache_stats.hits,
+        cache_misses=cache_stats.misses,
     )
 
 

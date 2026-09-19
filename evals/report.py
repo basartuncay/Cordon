@@ -138,9 +138,20 @@ def print_report(
     )
     total_tokens = summary.total_input_tokens + summary.total_output_tokens
     print(f"Model: {summary.model}")
+    if summary.planner_model or summary.quarantine_model:
+        print(
+            f"Planner model: {summary.planner_model}  "
+            f"Quarantine model: {summary.quarantine_model}"
+        )
     print(f"Total tool calls: {total_tool_calls}")
     print(f"Policy engine evaluated: {total_policy_evaluated} side-effecting call(s)")
-    print(f"Total tokens: {total_tokens} (input+output)")
+    print(f"Total tokens (billable, cache hits excluded): {total_tokens} (input+output)")
+    total_cache = summary.total_cache_hits + summary.total_cache_misses
+    if total_cache:
+        print(
+            f"Cache: {summary.total_cache_hits}/{total_cache} hits "
+            f"({summary.total_cache_misses} real LLM calls) — hits never counted toward cost"
+        )
     pricing_note = "" if summary.pricing_verified else "  [UNVERIFIED PRICING — rough estimate]"
     print(f"Estimated cost: ${summary.estimated_cost_usd:.4f}{pricing_note}")
     if summary.total_confirm_count:

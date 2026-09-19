@@ -7,7 +7,15 @@ from __future__ import annotations
 
 import pytest
 
-from cordon.llm import AnthropicClient, ModelConfig, _redact, estimate_cost_usd
+from cordon.llm import (
+    AnthropicClient,
+    CacheStats,
+    LLMResponse,
+    ModelConfig,
+    _redact,
+    default_model_config,
+    estimate_cost_usd,
+)
 
 
 def test_redact_replaces_secret_occurrences():
@@ -72,3 +80,71 @@ def test_anthropic_client_missing_key_error_does_not_echo_env(monkeypatch):
     monkeypatch.setattr("cordon.llm.load_dotenv", lambda *a, **kw: None)
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is not set"):
         AnthropicClient(model="claude-sonnet-5")
+
+
+def test_llm_response_from_cache_defaults_false():
+    response = LLMResponse(text="hi", tool_calls=[], stop_reason="end_turn")
+    assert response.from_cache is False
+
+
+def test_llm_response_from_cache_can_be_set_true():
+    response = LLMResponse(text="hi", tool_calls=[], stop_reason="end_turn", from_cache=True)
+    assert response.from_cache is True
+
+
+def test_cache_stats_starts_at_zero_and_is_mutable():
+    stats = CacheStats()
+    assert stats.hits == 0
+    assert stats.misses == 0
+    stats.hits += 1
+    stats.misses += 2
+    assert (stats.hits, stats.misses) == (1, 2)
+
+
+def _clear_model_env(monkeypatch):
+    for var in (
+        "CORDON_BASELINE_MODEL",
+        "CORDON_PLANNER_MODEL",
+        "CORDON_QUARANTINE_MODEL",
+        "CORDON_TOKEN_BUDGET",
+        "CORDON_PRICE_INPUT_PER_MTOK_USD",
+        "CORDON_PRICE_OUTPUT_PER_MTOK_USD",
+        "CORDON_PRICING_VERIFIED",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr("cordon.llm.load_dotenv", lambda *a, **kw: None)
+
+
+def test_default_model_config_defaults_to_haiku_for_every_role(monkeypatch):
+    _clear_model_env(monkeypatch)
+    cfg = default_model_config()
+    assert cfg.baseline_model == "claude-haiku-4-5-20251001"
+    assert cfg.planner_model == "claude-haiku-4-5-20251001"
+    assert cfg.quarantine_model == "claude-haiku-4-5-20251001"
+
+
+def test_default_model_config_token_budget_defaults_to_700000(monkeypatch):
+    _clear_model_env(monkeypatch)
+    cfg = default_model_config()
+    assert cfg.token_budget == 700_000
+
+
+def test_default_model_config_env_vars_override_every_field(monkeypatch):
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("CORDON_BASELINE_MODEL", "claude-sonnet-5")
+    monkeypatch.setenv("CORDON_TOKEN_BUDGET", "12345")
+    cfg = default_model_config()
+    assert cfg.baseline_model == "claude-sonnet-5"
+    assert cfg.token_budget == 12345
+    assert cfg.quarantine_model == "claude-haiku-4-5-20251001"  # untouched env var
+
+
+def test_estimate_cost_usd_uses_haiku_placeholder_pricing_by_default(monkeypatch):
+    _clear_model_env(monkeypatch)
+    cfg = default_model_config()
+    cost = estimate_cost_usd(1_000_000, 1_000_000, cfg)
+    # Not asserting a specific number here — the point is the defaults are
+    # cheaper than the old Sonnet-class placeholders (3.0/15.0), matching
+    # the corpus now defaulting every role to Haiku. Still unverified.
+    assert cfg.pricing_verified is False
+    assert cost < 18.0

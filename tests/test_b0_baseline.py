@@ -110,3 +110,29 @@ def test_b0_tool_error_is_surfaced_as_tool_result_not_raised():
     result = run_b0(env, "get an email that doesn't exist", llm)
 
     assert result.final_text == "That email doesn't exist."
+
+
+def test_b0_cache_hit_is_not_counted_toward_tokens():
+    env = empty_env()
+    script = [ScriptedTurn(text="cached answer", tool_calls=[], from_cache=True)]
+    llm = FakeLLMClient(script)
+
+    result = run_b0(env, "anything", llm)
+
+    assert result.cache_hits == 1
+    assert result.cache_misses == 0
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+
+
+def test_b0_cache_miss_is_counted_toward_tokens():
+    env = empty_env()
+    script = [ScriptedTurn(text="fresh answer", tool_calls=[], from_cache=False)]
+    llm = FakeLLMClient(script)
+
+    result = run_b0(env, "anything", llm)
+
+    assert result.cache_hits == 0
+    assert result.cache_misses == 1
+    assert result.input_tokens == 10
+    assert result.output_tokens == 5

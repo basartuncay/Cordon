@@ -26,6 +26,7 @@ import pytest
 from cordon.dotenv import load_dotenv
 from cordon.llm import AnthropicClient, default_model_config
 from evals.baselines.cordon_runner import run_b3
+from evals.cache import CachingLLMClient
 from evals.harness import run_harness, write_result_file
 from evals.scenario import load_attacks, load_benign_tasks
 
@@ -45,7 +46,7 @@ pytestmark = [
 
 def test_b3_real_api_smoke_two_benign_two_attacks():
     cfg = default_model_config()
-    llm = AnthropicClient(model=cfg.baseline_model)
+    llm = CachingLLMClient(AnthropicClient(model=cfg.baseline_model))
 
     all_tasks = load_benign_tasks(CORPUS_DIR / "tasks")
     all_attacks = load_attacks(CORPUS_DIR / "attacks")
@@ -71,5 +72,6 @@ def test_b3_real_api_smoke_two_benign_two_attacks():
         f"attack_success={attack_successes}/{len(attack_results)} "
         f"tokens={total_tokens} cost=${summary.estimated_cost_usd:.4f} "
         f"confirms={summary.total_confirm_count} "
+        f"cache={summary.total_cache_hits}/{summary.total_cache_hits + summary.total_cache_misses} "
         f"result_file={result_path}"
     )

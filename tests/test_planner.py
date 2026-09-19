@@ -11,6 +11,7 @@ import json
 
 import pytest
 
+from cordon.llm import CacheStats, LLMUsage
 from cordon.planner import MAX_RETRIES, PlannerError, make_plan
 from tests.fakes import TextScriptLLMClient
 
@@ -102,3 +103,31 @@ def test_make_plan_error_after_retries_mentions_the_last_validation_error():
     llm = TextScriptLLMClient([invalid] * (MAX_RETRIES + 1))
     with pytest.raises(PlannerError, match="unknown tool"):
         make_plan("Summarize my inbox.", llm)
+
+
+def test_make_plan_records_a_cache_miss_and_counts_its_tokens():
+    llm = TextScriptLLMClient([VALID_PLAN_JSON], from_cache=[False])
+    usage = LLMUsage()
+    stats = CacheStats()
+    make_plan("Summarize my inbox.", llm, usage=usage, cache_stats=stats)
+    assert stats.misses == 1
+    assert stats.hits == 0
+    assert usage.input_tokens == 20
+    assert usage.output_tokens == 10
+
+
+def test_make_plan_records_a_cache_hit_and_does_not_count_its_tokens():
+    llm = TextScriptLLMClient([VALID_PLAN_JSON], from_cache=[True])
+    usage = LLMUsage()
+    stats = CacheStats()
+    make_plan("Summarize my inbox.", llm, usage=usage, cache_stats=stats)
+    assert stats.hits == 1
+    assert stats.misses == 0
+    assert usage.input_tokens == 0
+    assert usage.output_tokens == 0
+
+
+def test_make_plan_without_cache_stats_still_works_normally():
+    llm = TextScriptLLMClient([VALID_PLAN_JSON], from_cache=[True])
+    plan = make_plan("Summarize my inbox.", llm)
+    assert len(plan.steps) == 1
