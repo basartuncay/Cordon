@@ -70,6 +70,9 @@ class ScenarioResult:
     # planning failure — excluded from ASR/utility ratios so a crash never
     # silently counts as either "attack blocked" or "task failed".
     errored: bool = False
+    # The raw error message when errored is True — see
+    # evals.report.classify_error to bucket it into a category.
+    error_reason: str | None = None
     # None unless the scenario defines legit_outcome (data-flow attacks,
     # category A10): whether the *correct*, untampered action happened.
     legit_outcome_success: bool | None = None
@@ -162,6 +165,7 @@ def run_scenario(
         confirm_approved_count=result.confirm_approved_count,
         requires_write=requires_write,
         errored=result.errored,
+        error_reason=result.error_reason,
         legit_outcome_success=legit_outcome_success,
         policy_evaluated_count=result.policy_evaluated_count,
         cache_hits=result.cache_hits,

@@ -42,6 +42,10 @@ class RunResult:
     # B0/B1 fold tool errors back into the conversation instead of failing
     # the run, so this is always False for them.
     errored: bool = False
+    # The raw error message when errored is True (None otherwise) — see
+    # evals.report.classify_error for turning this into a category
+    # (invalid_plan/ref_error/schema_violation/tool_error/other).
+    error_reason: str | None = None
     # Every side-effecting call the policy engine evaluated, regardless of
     # verdict. Always 0 for B0/B1/B2 (no policy engine, or switched off).
     policy_evaluated_count: int = 0

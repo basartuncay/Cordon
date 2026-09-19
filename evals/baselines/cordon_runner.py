@@ -103,13 +103,14 @@ def _run_cordon(
 
     try:
         plan = make_plan(user_request, planner_llm, usage=usage, cache_stats=cache_stats)
-    except PlannerError:
+    except PlannerError as exc:
         return RunResult(
             turns=0,
             final_text="Planning failed; no actions were taken.",
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             errored=True,
+            error_reason=str(exc),
             cache_hits=cache_stats.hits,
             cache_misses=cache_stats.misses,
         )
@@ -136,7 +137,13 @@ def _run_cordon(
         if o.status in ("executed", "confirm_approved")
         and o.tool not in (QUARANTINE_TOOL, TEMPLATE_TOOL)
     ]
-    errored = any(o.status == "error" for o in exec_result.outcomes)
+    error_outcome = next((o for o in exec_result.outcomes if o.status == "error"), None)
+    errored = error_outcome is not None
+    error_reason = (
+        (error_outcome.reasons[0] if error_outcome.reasons else "unknown error")
+        if error_outcome is not None
+        else None
+    )
     policy_evaluated_count = (
         sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS)
         if enforce_policy
@@ -152,6 +159,7 @@ def _run_cordon(
         confirm_count=confirm_log.confirm_count,
         confirm_approved_count=confirm_log.approved_count,
         errored=errored,
+        error_reason=error_reason,
         policy_evaluated_count=policy_evaluated_count,
         cache_hits=cache_stats.hits,
         cache_misses=cache_stats.misses,
