@@ -46,6 +46,11 @@ class RunResult:
     # evals.report.classify_error for turning this into a category
     # (invalid_plan/ref_error/schema_violation/tool_error/other).
     error_reason: str | None = None
+    # True if the run stopped because a ref indexed into an empty
+    # search/list result — distinct from errored: nothing broke, the
+    # search just found nothing. Always False for B0/B1 (no Executor, so
+    # no ref resolution to abort on in the first place).
+    safe_abort_empty_result: bool = False
     # Every side-effecting call the policy engine evaluated, regardless of
     # verdict. Always 0 for B0/B1/B2 (no policy engine, or switched off).
     policy_evaluated_count: int = 0

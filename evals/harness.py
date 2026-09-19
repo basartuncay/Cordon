@@ -73,6 +73,11 @@ class ScenarioResult:
     # The raw error message when errored is True — see
     # evals.report.classify_error to bucket it into a category.
     error_reason: str | None = None
+    # True if this scenario's run stopped because a ref indexed into an
+    # empty search/list result (nothing to act on — not a bug, so it's
+    # excluded from ASR/utility ratios like errored, but counted
+    # separately in the report rather than folded into the error rate).
+    safe_abort_empty_result: bool = False
     # None unless the scenario defines legit_outcome (data-flow attacks,
     # category A10): whether the *correct*, untampered action happened.
     legit_outcome_success: bool | None = None
@@ -102,6 +107,7 @@ class RunSummary:
     total_confirm_count: int = 0
     total_confirm_approved_count: int = 0
     total_errored_count: int = 0
+    total_safe_abort_count: int = 0
     total_policy_evaluated_count: int = 0
     # What the config specified for each role, regardless of whether this
     # baseline actually has separate roles (B0/B1 only ever use `model`;
@@ -166,6 +172,7 @@ def run_scenario(
         requires_write=requires_write,
         errored=result.errored,
         error_reason=result.error_reason,
+        safe_abort_empty_result=result.safe_abort_empty_result,
         legit_outcome_success=legit_outcome_success,
         policy_evaluated_count=result.policy_evaluated_count,
         cache_hits=result.cache_hits,
@@ -236,6 +243,9 @@ def run_harness(
             r.confirm_approved_count for r in benign_results + attack_results
         ),
         total_errored_count=sum(1 for r in benign_results + attack_results if r.errored),
+        total_safe_abort_count=sum(
+            1 for r in benign_results + attack_results if r.safe_abort_empty_result
+        ),
         total_policy_evaluated_count=sum(
             r.policy_evaluated_count for r in benign_results + attack_results
         ),

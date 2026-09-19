@@ -68,6 +68,16 @@ CALENDAR_ATTENDEE_ARG_NAMES: dict[str, str] = {
 QuarantineFn = Callable[[str, ExtractionSchema, str], str]  # (text, schema, instruction) -> value
 
 
+class SafeAbortEmptyResult(Exception):
+    """Raised when a ref indexes into a list-returning step's result and
+    that list is empty — the underlying search/list tool call legitimately
+    found nothing. This is distinct from every other execution failure:
+    nothing is broken, there's simply nothing to act on. Executor.run()
+    catches it separately and records a "safe_abort_empty_result" outcome
+    instead of "error", so the eval report can count it on its own instead
+    of inflating the error rate with a case where nothing went wrong."""
+
+
 def _summarize_value(value: Any) -> str:
     if isinstance(value, Tainted):
         prov = value.provenance
@@ -136,6 +146,11 @@ def _resolve_ref(step_outputs: dict[str, Any], step_id: str, path: str) -> Taint
     parts = path.split(".") if path else []
     for part in parts:
         if isinstance(current, list):
+            if not current:
+                raise SafeAbortEmptyResult(
+                    f"ref {step_id}.{path} indexes into an empty list result (0 items) — "
+                    "the underlying search/list tool call found nothing"
+                )
             current = current[int(part)]
         elif isinstance(current, Tainted):
             base = current.value
@@ -191,14 +206,24 @@ class Executor:
         passed Plan's own validation) and still fail at execution time in
         a way nothing could have caught ahead of time — e.g. a search
         that returns no results, then a later step refs into result[0].
-        That must fail this one scenario, never crash the caller: we
-        record it as an "error" outcome and stop the plan there, since
-        any later step is likely to depend on the state that just failed.
+        That must fail this one scenario, never crash the caller. Indexing
+        into an empty list result is recorded as its own
+        "safe_abort_empty_result" outcome (nothing is broken — the search
+        just found nothing); every other failure is recorded as "error".
+        Either way we stop the plan there, since any later step is likely
+        to depend on the state that just failed.
         """
         result = ExecutionResult()
         for step in plan.steps:
             try:
                 outcome = self._run_step(step, result)
+            except SafeAbortEmptyResult as exc:
+                result.outcomes.append(
+                    StepOutcome(
+                        step.step_id, step.tool, "safe_abort_empty_result", reasons=[str(exc)]
+                    )
+                )
+                break
             except Exception as exc:  # noqa: BLE001 - recorded, not swallowed silently
                 result.outcomes.append(
                     StepOutcome(step.step_id, step.tool, "error", reasons=[str(exc)])

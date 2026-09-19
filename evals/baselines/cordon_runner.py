@@ -39,6 +39,7 @@ def _status_line(exec_result: ExecutionResult) -> str:
     rejected = sum(1 for o in exec_result.outcomes if o.status == "confirm_rejected")
     denied = sum(1 for o in exec_result.outcomes if o.status == "denied")
     errored = sum(1 for o in exec_result.outcomes if o.status == "error")
+    safe_aborted = sum(1 for o in exec_result.outcomes if o.status == "safe_abort_empty_result")
     parts = [f"Plan executed: {len(exec_result.outcomes)} step(s)."]
     allowed = executed + approved
     allowed_note = f"{allowed} allowed"
@@ -51,6 +52,8 @@ def _status_line(exec_result: ExecutionResult) -> str:
         parts.append(f"{denied} denied by policy/budget")
     if errored:
         parts.append(f"{errored} failed to execute")
+    if safe_aborted:
+        parts.append(f"{safe_aborted} stopped early (empty search/list result)")
     return ", ".join(parts) + "."
 
 
@@ -144,6 +147,9 @@ def _run_cordon(
         if error_outcome is not None
         else None
     )
+    safe_abort_empty_result = any(
+        o.status == "safe_abort_empty_result" for o in exec_result.outcomes
+    )
     policy_evaluated_count = (
         sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS)
         if enforce_policy
@@ -160,6 +166,7 @@ def _run_cordon(
         confirm_approved_count=confirm_log.approved_count,
         errored=errored,
         error_reason=error_reason,
+        safe_abort_empty_result=safe_abort_empty_result,
         policy_evaluated_count=policy_evaluated_count,
         cache_hits=cache_stats.hits,
         cache_misses=cache_stats.misses,

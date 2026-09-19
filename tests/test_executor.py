@@ -34,11 +34,15 @@ deny_all = AutoDenyDecider()
 # --- unit-level executor mechanics ------------------------------------------
 
 
-def test_run_step_error_is_caught_and_stops_the_plan_without_raising():
-    """A real model can build a structurally valid plan that still fails
-    at execution time in a way no validation could catch ahead of time —
-    e.g. it searches for something, gets zero results, then refs into
-    result[0]. That must fail the *scenario*, not crash the harness."""
+def test_indexing_into_an_empty_search_result_is_a_safe_abort_not_an_error():
+    """A real model can build a structurally valid plan that still can't
+    complete at execution time in a way no validation could catch ahead of
+    time — e.g. it searches for something, gets zero results, then refs
+    into result[0]. That's not a bug in the plan or a crash: the search
+    legitimately found nothing, so this must be its own outcome
+    ("safe_abort_empty_result"), never lumped in with "error" — folding it
+    into "error" would count "nothing matched" the same as an actual
+    planner/executor mistake in the eval report's error rate."""
     env = Environment(mailbox=MockMailbox(inbox=[]), calendar=MockCalendar())
     plan = Plan(
         steps=[
@@ -59,8 +63,50 @@ def test_run_step_error_is_caught_and_stops_the_plan_without_raising():
 
     assert len(result.outcomes) == 2
     assert result.outcomes[0].status == "executed"
-    assert result.outcomes[1].status == "error"
+    assert result.outcomes[1].status == "safe_abort_empty_result"
     assert result.outcomes[1].reasons
+    assert len(env.mailbox.sent) == 0
+
+
+def test_indexing_out_of_range_on_a_nonempty_list_result_is_still_an_error():
+    """Unlike the empty-list case above, a *nonempty* list indexed out of
+    range means the plan's own index was wrong (e.g. the model guessed "2"
+    when only one result came back) — a genuine planning mistake, not "the
+    search found nothing." That must stay a plain "error"."""
+    env = Environment(
+        mailbox=MockMailbox(
+            inbox=[
+                Email(
+                    id="e1",
+                    thread_id="t1",
+                    sender="alice@company.example",
+                    to=["me@user.example"],
+                    subject="hi",
+                    body="hello",
+                    received_at="2026-01-05T09:00:00",
+                )
+            ]
+        ),
+        calendar=MockCalendar(),
+    )
+    plan = Plan(
+        steps=[
+            PlanStep(
+                step_id="search1", tool="search_emails", args={"query": LiteralArg(value="alice")}
+            ),
+            PlanStep(
+                step_id="s2",
+                tool="reply_email",
+                args={
+                    "email_id": RefArg(step_id="search1", path="5.id"),
+                    "body": LiteralArg(value="hi"),
+                },
+            ),
+        ]
+    )
+    result = Executor(env, PolicyConfig(contacts_allowlist=set())).run(plan)
+
+    assert result.outcomes[1].status == "error"
     assert len(env.mailbox.sent) == 0
 
 
