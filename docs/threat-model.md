@@ -1,8 +1,11 @@
 # Threat model
 
-Status: M3 Stage A (metrics tiering, labeled Cordon answers, corpus
-expanded with A9 adaptive attacks and A10 data-flow attacks). Stage B
-(the first full B0-B3 eval run) is next.
+Status: M3 Stage B complete — first full B0-B3 80-scenario eval run on
+claude-haiku-4-5-20251001, three real planner/executor bugs found and
+fixed along the way. See `docs/results.md` for the full table (tiered
+ASR, utility, worst-case, confidence intervals) and its own Limitations
+section (attack-corpus authorship, fixed-plan non-adaptivity, auto-deny
+vs. real human confirmation behavior).
 
 ## Trust boundary
 
