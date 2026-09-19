@@ -7,7 +7,7 @@ outright rather than silently passed through.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime
 
 import pytest
 
@@ -30,11 +30,22 @@ def test_extract_email_kind_rejects_a_non_address():
         extract("some untrusted text", schema, "extract the address", llm)
 
 
-def test_extract_date_kind_accepts_iso_date():
+def test_extract_date_kind_accepts_a_bare_date_and_normalizes_to_midnight():
     llm = TextScriptLLMClient(["2026-03-05"])
     schema = ExtractionSchema(kind="date")
     value = extract("meet me on March 5th", schema, "extract the date", llm)
-    assert value == str(date(2026, 3, 5))
+    assert value == datetime(2026, 3, 5).isoformat()
+
+
+def test_extract_date_kind_accepts_a_full_datetime_with_time_of_day():
+    """Calendar start/end need time-of-day, not just a date — this is
+    exactly what a real model extracts from 'moved to 2026-01-10T20:00:00'
+    style text, and create_event's start/end args need the time to
+    survive the round trip."""
+    llm = TextScriptLLMClient(["2026-01-10T20:00:00"])
+    schema = ExtractionSchema(kind="date")
+    value = extract("the meeting moved to 2026-01-10T20:00:00", schema, "extract it", llm)
+    assert value == datetime(2026, 1, 10, 20, 0, 0).isoformat()
 
 
 def test_extract_date_kind_rejects_non_date_text():

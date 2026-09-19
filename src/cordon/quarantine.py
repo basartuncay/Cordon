@@ -11,7 +11,7 @@ never becomes more trusted than its source.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 
@@ -51,7 +51,10 @@ def _validator_model(schema: ExtractionSchema) -> type[BaseModel]:
         field = Field(pattern=_EMAIL_PATTERN, max_length=schema.max_length)
         return create_model("Extracted", value=(str, field))
     if schema.kind == "date":
-        return create_model("Extracted", value=(date, ...))
+        # datetime, not date: calendar start/end need time-of-day, and
+        # pydantic's datetime validator still accepts a bare "YYYY-MM-DD"
+        # (normalizing it to midnight) for callers that only need a date.
+        return create_model("Extracted", value=(datetime, ...))
     if schema.kind == "id":
         field = Field(pattern=_ID_PATTERN, max_length=schema.max_length)
         return create_model("Extracted", value=(str, field))

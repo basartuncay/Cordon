@@ -36,10 +36,25 @@ to reference an earlier step's output
   - {{"kind": "list", "items": [<arg value>, ...]}} for a list built from a mix of literals/refs
 - step_id values must be unique. A ref may only point to a step_id that appears earlier \
 in the plan.
+- IMPORTANT — list-returning tools: list_emails, search_emails, and list_events each return a \
+LIST of records, not a single record. A ref path into one of them MUST start with a numeric \
+index, e.g. "0.id" or "0.sender" for the first result, "1.body" for the second. A bare empty \
+path ("") on a list-returning step is only valid when the *next* step also expects a list \
+(e.g. a `template`/`quarantine_extract` step never accepts a whole list as "input" — index into \
+one specific item first). If you don't know which index has what you need, prefer get_email/\
+get_event with a literal id when you already know it, or plan to inspect index 0 for the common \
+single-result case.
+- Email records have EXACTLY these fields: id, thread_id, sender, sender_trust, to, subject, \
+body, sensitivity, received_at. There is no "start_time"/"end_time"/"date" field on an email — \
+if a meeting time, address, or any other specific value is only mentioned in an email's free \
+text (subject/body), you MUST extract it with quarantine_extract, never ref a made-up field name.
+- Calendar event records have EXACTLY these fields: id, title, start, end, organizer, attendees, \
+description, location.
 - To use an address/date/id extracted from an email or event body, first read it, then add a \
 {{"tool": "quarantine_extract", "args": {{"input": {{"kind": "ref", ...}}, \
 "schema": {{"kind": "email|date|id|enum|text", ...}}, "instruction": "..."}}}} step to pull out \
-the specific value you need, then ref that step's output.
+the specific value you need, then ref that step's output. The "schema" object only supports the \
+fields kind, enum_values, and max_length — no other keys.
 - To build message text from a mix of your own words and extracted values, use a \
 {{"tool": "template", "args": {{"parts": {{"kind": "list", "items": [...]}}}}}} step.
 - Output ONLY the JSON object, no other text, no markdown fences.
