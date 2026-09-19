@@ -79,7 +79,17 @@ def load_benign_tasks(directory: Path) -> list[BenignScenario]:
 
 
 def build_environment(seed: SeedData) -> Environment:
+    """Deep-copies every Email/CalendarEvent so the returned Environment
+    never shares mutable state with `seed` or with any other environment
+    built from it — MockMailbox/MockCalendar mutate their records in
+    place (send_email, add_attendee, delete_event, ...), so without this,
+    calling build_environment twice on the same scenario would let one
+    run's side effects leak into the next "fresh" one.
+    """
     return Environment(
-        mailbox=MockMailbox(inbox=list(seed.emails), contacts=list(seed.contacts)),
-        calendar=MockCalendar(events=list(seed.events)),
+        mailbox=MockMailbox(
+            inbox=[e.model_copy(deep=True) for e in seed.emails],
+            contacts=list(seed.contacts),
+        ),
+        calendar=MockCalendar(events=[e.model_copy(deep=True) for e in seed.events]),
     )
