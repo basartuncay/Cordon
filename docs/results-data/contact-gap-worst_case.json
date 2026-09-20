@@ -1,0 +1,98 @@
+{
+  "v1_approve": {
+    "c_001": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_002": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_003": {
+      "action_status": "confirm_approved",
+      "rules": [
+        "P4"
+      ],
+      "success": true
+    },
+    "c_004": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    }
+  },
+  "v1_deny": {
+    "c_001": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_002": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_003": {
+      "action_status": "confirm_rejected",
+      "rules": [
+        "P4"
+      ],
+      "success": false
+    },
+    "c_004": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    }
+  },
+  "v2_approve": {
+    "c_001": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_002": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_003": {
+      "action_status": "confirm_approved",
+      "rules": [
+        "P4"
+      ],
+      "success": true
+    },
+    "c_004": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    }
+  },
+  "v2_deny": {
+    "c_001": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_002": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    },
+    "c_003": {
+      "action_status": "confirm_rejected",
+      "rules": [
+        "P4"
+      ],
+      "success": false
+    },
+    "c_004": {
+      "action_status": "executed",
+      "rules": [],
+      "success": true
+    }
+  }
+}
