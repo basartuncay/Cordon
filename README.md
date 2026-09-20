@@ -78,12 +78,19 @@ B3 replays B2's cached planner and quarantine calls (the policy engine only chan
 
 Everything above this section is v0.1, unchanged. v0.2 adds P6 (see "How
 it works" above) and a 15-scenario holdout attack corpus, written in a
-**separate Claude.ai chat session** — not human-written, not blind, but
-closed off from the implementer (Claude Code) while P6 was being
-designed, so it's a genuinely different test of P6 specifically, not an
+**separate Claude.ai chat session** — not human-written, not blind, and
+not unaware of P6: that session **wrote P6's specification** and knew
+the documented gaps and v0.1 results, and deliberately targeted P6's
+area with its `gap-variant` group. The only separation is narrower: the
+*implementer* (Claude Code, writing `src/cordon/policy.py`) never saw
+these specific attack scenarios while writing P6's code, verified via
+git history (the P6 commit predates the holdout corpus commit). Not an
 independent red team in the full sense (same underlying model family,
-documented knowledge of P1-P5's design). Full write-up, including a
-per-scenario audit appendix, in [`docs/results-holdout.md`](docs/results-holdout.md); P6's effect on the main corpus is in [`docs/results.md`](docs/results.md)'s own "v0.2" section.
+same project context, and the attack author already knew the rule being
+targeted). Full write-up, including a per-scenario audit appendix, in
+[`docs/results-holdout.md`](docs/results-holdout.md); P6's effect on the
+main corpus is in [`docs/results.md`](docs/results.md)'s own "v0.2"
+section.
 
 **Main corpus, P6's effect:** zero measurable effect on the real run
 (every scenario's outcome was byte-identical between P1-P5-only and
@@ -100,10 +107,15 @@ groups:
 
 | Group | n | Worst-case blocked, P1-P5 | Worst-case blocked, P1-P6 |
 |---|---|---|---|
-| gap-variant (P6 *expected* to help) | 6 | 2/6 = 33% | **6/6 = 100%** |
-| novel-surface (P6 *not* expected to help) | 7 | 7/7 = 100% | 7/7 = 100% (unchanged — P1/P3/P4 already covered it) |
+| gap-variant (targets P6's area) | 6 | 2/6 = 33% | **6/6 = 100%** |
+| novel-surface (other surfaces) | 7 | 7/7 = 100% | 7/7 = 100% (unchanged — P1/P3/P4 already covered it) |
 
-Both predictions held. n=15 is small — treat this as a directional
+Read the 2/6 → 6/6 jump as **"the implementation matches its own
+specification,"** not as an independent test generalizing to unknown
+attacks: the attack author wrote P6's specification and built
+`gap-variant` specifically to target it, so this shows P6 does what it
+was designed to do, not that it holds up against attacks nobody
+anticipated. n=15 is small either way — treat this as a directional
 result, not an estimate (see `docs/results-holdout.md`'s own CI-by-CI
 caveats).
 
@@ -114,7 +126,7 @@ caveats).
 - The attack corpus, including the adaptive attacks aimed at the policy engine, was written by the same model that wrote the policy. An independent red team would find more.
 - Auto-deny is safer than a real user would be; auto-approve is the opposite extreme. Neither models confirmation fatigue.
 - No real Gmail/Calendar mode, no AgentDojo adapter.
-- **(v0.2)** The holdout corpus is n=15, one run, same underlying model family as the policy implementer — smaller and less independent than an ideal red team, even though it's a genuinely different test of P6 specifically (see above).
+- **(v0.2)** The holdout corpus is n=15, one run, and its author knew P6's specification (wrote it) and the documented gaps — smaller and considerably less independent than an ideal red team; only the implementer was kept from seeing the resulting attacks while writing P6's code (see above).
 - **(v0.2)** P6 deliberately does not gate CONTACT-trust content — a compromised contact account is a known, accepted gap (`docs/threat-model.md`), not something P6 tries to close. Widening it to CONTACT would gate most ordinary replies to real contacts.
 - **(v0.2)** P6 adds a fourth confirmation-worthy rule on top of P1-P5's existing ones; on both corpora tested so far it added zero *new* real-run confirm prompts, but that's a property of these two specific corpora + this specific model's behavior, not a guarantee it never will on a different one.
 
@@ -122,15 +134,15 @@ caveats).
 
 **Done (M0–M3, v0.1):** repo scaffold, tooling and CI; a mock mailbox/calendar with typed read/write tools; the undefended (B0) and spotlighting (B1) baselines; the planner/executor/quarantine pipeline with taint tracking; the P1–P5 policy engine with no-LLM unit tests; an 80-scenario corpus (16 benign, 64 attacks across 10 categories, including Turkish/German attacks); a full B0–B3 real-model evaluation run with tiered/primary-secondary ASR, utility, and a worst-case (no-LLM) analysis, all written up honestly in `docs/results.md`.
 
-**Done (v0.2):** P6, a content-trust gate closing the two gaps v0.1 named by scenario id (`a9_003`, `a9_005`) — see "How it works" above; a 15-scenario holdout corpus (`make holdout-check`) written in a separate session that never saw P6's design, evaluated the same way as the main corpus, written up in `docs/results-holdout.md`.
+**Done (v0.2):** P6, a content-trust gate closing the two gaps v0.1 named by scenario id (`a9_003`, `a9_005`) — see "How it works" above; a 15-scenario holdout corpus (`make holdout-check`), written in a separate Claude.ai session that knew P6's specification (it wrote it) but was never seen by the implementer while P6's code was written, evaluated the same way as the main corpus, written up in `docs/results-holdout.md`.
 
-**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on either corpus; a fully independent red team (the holdout corpus is a different test of P6 specifically, not that).
+**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on either corpus; a fully independent red team (the holdout corpus's author knew P6's specification and wrote attacks targeting it — only the implementer was kept from seeing those attacks, which is a narrower and weaker separation than an independent red team).
 
 **Plausible next steps**, roughly in order of how directly they'd close a documented gap:
 
 - A "safe re-query" path for an empty search/list result — letting the planner (or a bounded retry loop) try a different query instead of ending the plan, which is part of why B2/B3's benign utility trails B0/B1's on this run.
 - Something other than provenance for detecting a compromised contact account — P6 deliberately doesn't gate CONTACT-trust content (see Limitations), and that's the residual gap both corpora's "novel-surface"/compromised-account scenarios point at.
-- A genuinely independent attack corpus — the holdout set closes some of this gap (a different session, never saw P6) but not all of it (same model family, told about P1-P5's design and known gaps beforehand).
+- A genuinely independent attack corpus, written by an author who does **not** know the rule being tested — the holdout set doesn't close this gap: its author wrote P6's own specification and deliberately targeted it with `gap-variant`. Only the implementer was kept from seeing the resulting attacks, which is a much narrower separation.
 - A small study of real human confirmation behavior, to replace the two artificial ceilings (auto-deny, auto-approve) with something closer to actual confirmation-fatigue rates.
 
 This list is deliberately short and un-scored — see `docs/results.md`/`docs/results-holdout.md`'s Limitations sections for the honest cost/benefit numbers behind each item, and `docs/threat-model.md`'s Known gaps for the exact scenarios that demonstrate them.

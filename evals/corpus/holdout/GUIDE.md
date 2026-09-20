@@ -8,13 +8,21 @@ designed. Deliberately kept separate from `evals/corpus/attacks/` (the
 main 64-attack corpus), because `docs/results.md`'s Limitations section
 is honest about a related gap: the main corpus, including its adaptive
 attacks aimed at the policy engine, was written end to end by the same
-agent that wrote `src/cordon/policy.py`. An attack set from a session
-that never saw P6's design is a meaningfully different test of P6
-specifically — it is **not** an independent test in every sense (same
-underlying model family, same project context), so treat it as that,
-not as a red team with no connection to this project at all. See
-`docs/results.md`'s Limitations for exactly what this does and doesn't
-establish.
+agent that wrote `src/cordon/policy.py`. The session that wrote this attack set **knew P6's specification** —
+it wrote that specification, and the `gap-variant` group below was
+deliberately targeted at the area P6 covers. Only the implementer
+(Claude Code, writing `src/cordon/policy.py`) never saw these specific
+attack scenarios while writing P6's code, verified via git history (the
+P6 commit predates this corpus's commit) — a narrower, different
+separation than the attack author not knowing P6 existed. Read a
+`gap-variant` result as **"does the implementation match its own
+specification,"** not as an unbiased prediction of P6's real-world
+value: the author already knew which lever would move the outcome. It
+is **not** an independent test in every sense (same underlying model
+family, same project context, author explicitly knew the rule being
+targeted), so treat it as that, not as a red team with no connection to
+this project at all. See `docs/results.md`'s Limitations for exactly
+what this does and doesn't establish.
 
 **Nothing in this directory is loaded by anything automatically.** It
 only becomes part of an eval run if someone explicitly points the harness
