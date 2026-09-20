@@ -4,12 +4,19 @@
 > content-trust gate, `CORDON_POLICY_VERSION=v1|v2`) and a 15-scenario
 > holdout corpus written in a separate Claude.ai chat session — not
 > human-written, not blind, but closed off from the implementer (Claude
-> Code) during P6's design. M4's AgentDojo adapter and a real
-> Gmail/Calendar mode were never started. Final, measured results live in
-> `docs/results.md` (main corpus) and `docs/results-holdout.md` (holdout),
-> not predicted anywhere else in this file. Everything below is the
-> **original project plan**, kept as historical context — read it as
-> intent at the time, not a current status claim.
+> Code) during P6's design. v0.2.1 measures (does not adjust; P6 stayed
+> frozen at tag `v0.2.0`) P6's real cost and the size of the accepted
+> CONTACT-trust gap, on two small scenario sets (`evals/corpus/p6cost`,
+> `evals/corpus/contact-gap`) authored by the same Claude.ai session that
+> wrote P6's specification and the holdout corpus, with predictions
+> pre-registered before any real-model run (tag `v0.2.1-prereg`). M4's
+> AgentDojo adapter and a real Gmail/Calendar mode were never started.
+> Final, measured results live in `docs/results.md` (main corpus),
+> `docs/results-holdout.md` (holdout), `docs/results-p6cost.md` (P6 cost),
+> and `docs/results-contact-gap.md` (CONTACT-gap) — not predicted anywhere
+> else in this file. Everything below is the **original project plan**,
+> kept as historical context — read it as intent at the time, not a
+> current status claim.
 
 ## One-line pitch
 A CaMeL-inspired agent for Gmail/Calendar where **untrusted email content can never decide what the agent does**, enforced by provenance tracking and a deterministic policy engine, and *measured* against an undefended baseline.

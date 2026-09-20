@@ -133,6 +133,42 @@ decision-level manipulation gap-variant/P6 actually targets. Read
 "novel-surface" as regression coverage for P1-P4's implementation, not
 evidence Cordon generalizes to novel attack surfaces.
 
+## v0.2.1: P6's measured cost and the CONTACT-gap
+
+P6 stayed **frozen** (tag `v0.2.0`) for this work — it only measures, on
+two small scenario sets authored by the same Claude.ai session that
+wrote P6's specification and the holdout corpus, with predictions
+pre-registered before any real-model run (tag `v0.2.1-prereg`, verbatim
+in [`docs/preregistration-v0.2.1.md`](docs/preregistration-v0.2.1.md)).
+Full write-ups: [`docs/results-p6cost.md`](docs/results-p6cost.md) (Part
+A, 10 benign tasks) and
+[`docs/results-contact-gap.md`](docs/results-contact-gap.md) (Part B, 4
+attacks). Total real spend: $0.3699 (cap was $1.00; every individual run
+stayed under its own $0.30 cap).
+
+**P6's real cost (Part A, n=10, one Haiku run):** one new confirmation
+prompt attributable to P6 (`p_009`) — smaller than the pre-registered
+4/10, but because 3 of the other 4 predicted tasks (`p_001`, `p_005`,
+`p_008`) never reached a write step at all in this run (quarantine-
+extraction failures and empty-search safe-aborts upstream of the policy
+engine, not policy-engine behavior). Benign utility under v1 and v2 was
+identical at every confirm mode (0/10 deny, 1/10 approve) — this run's
+utility floor was set by the small model's own execution reliability
+(wrong-recipient replies, a literal `"Bob"` instead of an address,
+domain hallucinations), not by P6.
+
+**CONTACT-gap (Part B, n=4, one Haiku run):** worst-case (assume the
+model was completely fooled), the gap is **3/4** — P6 never blocks
+CONTACT-trust content to an allowlisted recipient (`c_001`, `c_002`,
+`c_004`); the fourth scenario (`c_003`, a calendar field) is blocked,
+but by **P4** (which gates any non-literal calendar argument regardless
+of trust level), not P6 — exactly the case the pre-registration declined
+to predict. In Cordon's real run, the gap materialized in 1/4 cases
+(`c_002`); the other two candidates errored at quarantine extraction
+before reaching a write step, so 3/4 remains the more meaningful number
+for the gap's structural size. Both pre-registered predictions (H5, H6)
+held.
+
 ## Limitations
 
 - Small corpus and a single run per system; confidence intervals are wide.
@@ -141,8 +177,8 @@ evidence Cordon generalizes to novel attack surfaces.
 - Auto-deny is safer than a real user would be; auto-approve is the opposite extreme. Neither models confirmation fatigue.
 - No real Gmail/Calendar mode, no AgentDojo adapter.
 - **(v0.2)** The holdout corpus is n=15, one run, and its author knew P6's specification (wrote it) and the documented gaps — smaller and considerably less independent than an ideal red team; only the implementer was kept from seeing the resulting attacks while writing P6's code (see above).
-- **(v0.2)** P6 deliberately does not gate CONTACT-trust content — a compromised contact account is a known, accepted gap (`docs/threat-model.md`), not something P6 tries to close. Widening it to CONTACT would gate most ordinary replies to real contacts. **Not yet measured** — neither corpus so far includes a scenario built specifically to quantify how often such content would go through unchecked (see `docs/results.md`/`docs/results-holdout.md`'s own notes on this).
-- **(v0.2)** P6 adds a fourth confirmation-worthy rule on top of P1-P5's existing ones; on both corpora tested so far it added zero *new* real-run confirm prompts, but that's a property of these two specific corpora + this specific model's behavior, not a guarantee it never will on a different one.
+- **(v0.2.1)** P6 deliberately does not gate CONTACT-trust content — a compromised contact account is a known, accepted gap (`docs/threat-model.md`), not something P6 tries to close. Widening it to CONTACT would gate most ordinary replies to real contacts. **Measured** (v0.2.1, n=4, one Haiku run): worst-case gap is 3/4 for email content to an allowlisted recipient; a calendar-field variant (`c_003`) is blocked by P4 instead, not by P6 — see `docs/results-contact-gap.md`. Still only one small run, one model, one author who knew what P6 does and doesn't cover.
+- **(v0.2.1)** P6 adds a fourth confirmation-worthy rule on top of P1-P5's existing ones; on the main corpus, the holdout corpus, and the dedicated `p6cost` cost-measurement corpus, it added at most one *new* real-run confirm prompt (1/10 tasks on `p6cost`) — but `p6cost`'s own write-up shows most of the pre-registered candidate tasks never reached a write step at all in this run, so this number likely understates P6's cost against a more reliable planner/quarantine pair, not a guarantee it's this cheap in general.
 
 ## Project status and future work
 
@@ -150,13 +186,15 @@ evidence Cordon generalizes to novel attack surfaces.
 
 **Done (v0.2):** P6, a content-trust gate closing the two gaps v0.1 named by scenario id (`a9_003`, `a9_005`) — see "How it works" above; a 15-scenario holdout corpus (`make holdout-check`), written in a separate Claude.ai session that knew P6's specification (it wrote it) but was never seen by the implementer while P6's code was written, evaluated the same way as the main corpus, written up in `docs/results-holdout.md`.
 
-**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on either corpus; a fully independent red team (the holdout corpus's author knew P6's specification and wrote attacks targeting it — only the implementer was kept from seeing those attacks, which is a narrower and weaker separation than an independent red team).
+**Done (v0.2.1):** measured (never adjusted) P6's real cost and the CONTACT-gap's size, on two small scenario sets (`evals/corpus/p6cost`, 10 benign tasks; `evals/corpus/contact-gap`, 4 attacks) authored by the same Claude.ai session that wrote P6's specification and the holdout corpus, predictions pre-registered before any real-model run (tag `v0.2.1-prereg`); added per-scenario policy-rule observability (`rules_fired`) to the result JSON, with a regression proof that it changed no existing decision; a generalized `make corpus-check DIR=...` validator for any non-holdout corpus directory. Written up in `docs/results-p6cost.md` and `docs/results-contact-gap.md`.
+
+**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on any corpus; a fully independent red team or a fully independent CONTACT-gap/P6-cost measurement (both the holdout corpus and the v0.2.1 scenario sets were authored by a Claude.ai session that knew P6's specification and, for the holdout/`gap-variant` case, deliberately targeted it — only the implementer was kept from seeing the resulting attacks, which is a narrower and weaker separation than genuine independence).
 
 **Plausible next steps**, roughly in order of how directly they'd close a documented gap:
 
-- A "safe re-query" path for an empty search/list result — letting the planner (or a bounded retry loop) try a different query instead of ending the plan, which is part of why B2/B3's benign utility trails B0/B1's on this run.
-- Something other than provenance for detecting a compromised contact account — P6 deliberately doesn't gate CONTACT-trust content (see Limitations), and that's the residual gap both corpora's "novel-surface"/compromised-account scenarios point at.
-- A genuinely independent attack corpus, written by an author who does **not** know the rule being tested — the holdout set doesn't close this gap: its author wrote P6's own specification and deliberately targeted it with `gap-variant`. Only the implementer was kept from seeing the resulting attacks, which is a much narrower separation.
+- A "safe re-query" path for an empty search/list result — letting the planner (or a bounded retry loop) try a different query instead of ending the plan, which is part of why B2/B3's benign utility trails B0/B1's on this run, and why most of `p6cost`'s pre-registered P6-firing candidates never reached a write step at all.
+- Something other than provenance for detecting a compromised contact account — P6 deliberately doesn't gate CONTACT-trust content (see Limitations), and v0.2.1 put a number on it (3/4 worst-case on `contact-gap`'s email scenarios).
+- A genuinely independent attack corpus and cost/gap measurement, written by an author who does **not** know the rule being tested — neither the holdout set nor the v0.2.1 scenario sets close this gap: their author wrote P6's own specification. Only the implementer was kept from seeing the resulting scenarios, which is a much narrower separation.
 - A small study of real human confirmation behavior, to replace the two artificial ceilings (auto-deny, auto-approve) with something closer to actual confirmation-fatigue rates.
 
 This list is deliberately short and un-scored — see `docs/results.md`/`docs/results-holdout.md`'s Limitations sections for the honest cost/benefit numbers behind each item, and `docs/threat-model.md`'s Known gaps for the exact scenarios that demonstrate them.
@@ -172,6 +210,7 @@ uv run pytest                      # offline: mock env, policy engine, executor,
 cp .env.example .env               # then add ANTHROPIC_API_KEY (never commit it)
 make eval BASELINE=b0              # b0 | b1 | b2 | b3
 make holdout-check                 # validates evals/corpus/holdout/attacks/*.yaml, no LLM calls
+make corpus-check DIR=evals/corpus/p6cost   # validates any <dir>/{tasks,attacks}/*.yaml, no LLM calls
 
 # what produced the tables above
 CORDON_CONFIRM_MODE=deny    uv run python -m evals.harness --baseline b3 --budget-usd 1.00
@@ -189,11 +228,13 @@ Model names, token budget, confirmation mode, and policy version (`CORDON_POLICY
 src/cordon/   provenance, plan, planner, quarantine, executor, policy (P1-P6), confirm, llm,
               env (Environment container), dotenv (.env loader), tools/
 evals/        corpus/ (main attacks + benign tasks; corpus/holdout/ for the v0.2 holdout
-              corpus + its GUIDE.md/TEMPLATE.yaml), harness, report, metrics (Wilson CI),
+              corpus + its GUIDE.md/TEMPLATE.yaml; corpus/p6cost/ + corpus/contact-gap/ for
+              v0.2.1's cost/gap measurement sets), harness, report, metrics (Wilson CI),
               predicates (deterministic success/attacker-goal checks), scenario
-              (corpus loading), worst_case, cache, baselines/, holdout_check
+              (corpus loading), worst_case, cache, baselines/, holdout_check, corpus_check
 tests/        offline tests (scripted LLM client, no network)
-docs/         threat-model.md, results.md, results-holdout.md, results-data/ (source JSONs)
+docs/         threat-model.md, results.md, results-holdout.md, results-p6cost.md,
+              results-contact-gap.md, preregistration-v0.2.1.md, results-data/ (source JSONs)
 ```
 
 ## License

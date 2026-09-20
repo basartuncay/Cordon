@@ -331,14 +331,15 @@ still unblocked under v2 deny (`a10_004`, `a10_011`, `a10_015`,
 attack with no tool call for *any* policy rule — P1 through P6 — to gate
 in the first place. That gap is unchanged by P6 and remains open.
 
-**CONTACT-trust gap, not yet measured**: P6 deliberately does not gate
+**CONTACT-trust gap, measured in v0.2.1**: P6 deliberately does not gate
 content from a CONTACT-trust sender (see `docs/threat-model.md`) — a
 compromised contact account's message can carry the same kind of
-untrusted payload P6 catches from an `unknown`-trust sender, and nothing
-in this corpus's results measures how often that would actually go
-through unchecked. No scenario in this corpus is built specifically to
-measure this; see `docs/results-holdout.md` for the same note on the
-holdout corpus.
+untrusted payload P6 catches from an `unknown`-trust sender. No scenario
+in *this* corpus is built to measure it, but a dedicated 4-scenario
+corpus (`evals/corpus/contact-gap`) now does: worst-case, the gap is 3/4
+for email content to an allowlisted recipient (P6 never blocks it); a
+calendar-field variant is blocked, but by P4, not P6. Full write-up in
+[`docs/results-contact-gap.md`](results-contact-gap.md).
 
 ## Reproducibility
 

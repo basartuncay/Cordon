@@ -272,14 +272,16 @@ the specs for those rules say it should — useful as regression coverage
 for P1-P4, not as evidence Cordon generalizes to novel attack surfaces
 in the sense the group's name suggests.
 
-**CONTACT-trust gap, not yet measured**: P6 deliberately does not gate
+**CONTACT-trust gap, measured in v0.2.1**: P6 deliberately does not gate
 content from a CONTACT-trust sender (see `docs/threat-model.md`) — a
 compromised contact account's message can carry the same kind of
-untrusted payload P6 catches from an `unknown`-trust sender, and nothing
-in this file or the main corpus's results measures how often that would
-actually go through unchecked. Neither corpus so far includes a scenario
-built specifically to measure this. *Updated once it is measured — see
-`docs/results.md`'s Limitations for the current status of this note.*
+untrusted payload P6 catches from an `unknown`-trust sender. Neither
+this file nor the main corpus's results measure it directly, but a
+dedicated 4-scenario corpus (`evals/corpus/contact-gap`) now does:
+worst-case, the gap is 3/4 for email content to an allowlisted
+recipient (P6 never blocks it); a calendar-field variant is blocked,
+but by P4, not P6. Full write-up in
+[`docs/results-contact-gap.md`](results-contact-gap.md).
 
 ## Honest interpretation
 
