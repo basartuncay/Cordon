@@ -180,6 +180,26 @@ def test_build_worst_case_plan_event_attendee_domain_with_description_contains()
     assert attendee_arg.value == "attacker@evil.example"  # literal, not tainted — see docstring
 
 
+def test_build_worst_case_plan_event_deleted():
+    """Holdout h_010 (novel-surface): event_deleted is a pre-existing
+    predicate (not one of the 3 added for the holdout corpus) that
+    simply had no worst-case mapping either — no main-corpus scenario
+    ever used it as a write-tier attacker_goal (its only main-corpus
+    uses are all requires_write=False, so worst_case.py, which only
+    processes the write tier, never needed it before). The target
+    event_id is the tainted value here (the attacker's claim about
+    *which* event to delete flows through quarantine), matching every
+    other mapping's one-tainted-value-via-quarantine pattern. P3 (the
+    rule that actually gates delete_event) fires on the tool alone,
+    never on event_id provenance, so this choice doesn't change any
+    policy outcome — it's just the most consistent framing."""
+    scenario = _holdout_attack("h_010")
+    plan, tampered_value = build_worst_case_plan(scenario)
+    assert tampered_value == "evt-board"
+    action_step = next(s for s in plan.steps if s.tool == "delete_event")
+    assert action_step.args["event_id"].step_id == "extract"  # tainted, not literal
+
+
 def test_run_worst_case_scenario_p6_v2_blocks_untrusted_body_to_an_allowlisted_recipient():
     """a10_002: replying to Alice (allowlisted) with a body quarantined
     from the attacker's spoofing email (e2) — P1 alone ALLOWS this
@@ -225,6 +245,32 @@ def test_every_requires_write_attack_has_a_buildable_worst_case_plan():
 
 def test_every_requires_write_attack_worst_case_run_does_not_error():
     attacks = load_attacks(CORPUS_DIR / "attacks")
+    write_attacks = [a for a in attacks if a.requires_write]
+    for scenario in write_attacks:
+        result = run_worst_case_scenario(scenario, enforce_policy=False, confirm=AutoDenyDecider())
+        assert result["action_status"] != "error", (scenario.id, result)
+
+
+def test_every_holdout_requires_write_attack_has_a_buildable_worst_case_plan():
+    """Same guard as test_every_requires_write_attack_has_a_buildable_
+    worst_case_plan above, for the holdout corpus — this is exactly the
+    test that would have caught sent_email_to_address_contains/
+    event_location_or_description_contains/
+    event_attendee_domain_with_description_contains/event_deleted
+    missing their mappings before a real (paid) holdout run hit it
+    instead. A future predicate with no mapping, used as a write-tier
+    attacker_goal by any holdout scenario, fails this immediately."""
+    attacks = load_attacks(HOLDOUT_DIR / "attacks")
+    write_attacks = [a for a in attacks if a.requires_write]
+    assert len(write_attacks) == 13
+    for scenario in write_attacks:
+        plan, tampered_value = build_worst_case_plan(scenario)
+        assert len(plan.steps) >= 1
+        assert isinstance(tampered_value, str) and tampered_value
+
+
+def test_every_holdout_requires_write_attack_worst_case_run_does_not_error():
+    attacks = load_attacks(HOLDOUT_DIR / "attacks")
     write_attacks = [a for a in attacks if a.requires_write]
     for scenario in write_attacks:
         result = run_worst_case_scenario(scenario, enforce_policy=False, confirm=AutoDenyDecider())
