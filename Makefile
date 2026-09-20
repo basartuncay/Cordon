@@ -1,6 +1,7 @@
-.PHONY: eval test lint fmt holdout-check
+.PHONY: eval test lint fmt holdout-check corpus-check
 
 BASELINE ?= b0
+DIR ?=
 
 eval:
 	uv run python -m evals.harness --baseline $(BASELINE)
@@ -16,3 +17,6 @@ fmt:
 
 holdout-check:
 	uv run python -m evals.holdout_check
+
+corpus-check:
+	uv run python -m evals.corpus_check $(DIR)
