@@ -2,8 +2,10 @@
 name = "cordon"
 version = "0.1.0"
 description = "A CaMeL-inspired agent for Gmail/Calendar resistant to prompt injection, with provenance tracking and a deterministic policy engine."
+readme = "README.md"
+license = "MIT"
 authors = [
-    { name = "Basar Tuncay", email = "basarmeta@gmail.com" }
+    { name = "Basar Tuncay" }
 ]
 requires-python = ">=3.12"
 dependencies = [
