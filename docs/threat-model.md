@@ -45,8 +45,49 @@ vs. real human confirmation behavior).
    schema-constrained outputs only; outputs remain tainted.
 4. A deterministic policy engine (no LLM) checks every side-effecting tool
    call's argument provenance before execution — see the P1–P5 rules in
-   `CLAUDE.md`.
+   `CLAUDE.md`, plus P6 (v0.2, below).
 5. Anything the policy engine flags requires human confirmation.
+
+## P6: content-trust gate (v0.2)
+
+**Rule.** For `send_email`/`reply_email`/`forward_email`'s `subject`/
+`body`/`note` args, or `create_event`/`update_event`'s `title`/
+`description`/`location` args: if *any* of that content is derived from
+a source trusted **below CONTACT** (i.e. `unknown`), the call requires
+confirmation — even if the recipient/attendee is the user's own request
+literal or already in the contacts allowlist. This is new: P1 and P4 only
+ever look at *recipient/attendee* provenance, never at what the content
+itself says, which is exactly how `a9_003`/`a9_005`/`a10_002`-shaped
+attacks got through — an attacker's words riding along to a destination
+that was always going to be fine.
+
+**Exemption.** `forward_email`'s forwarded *original* message is not
+checked — forwarding an untrusted email is the whole point of the
+forward action, not a surprise injection. Only the forwarder's own added
+`note` is checked, same as everything else P6 covers.
+
+**Why CONTACT is the line, not just "not the user."** P6 only fires on
+`unknown`-trust content; a `contact`-trust source (a real, seeded contact
+address) never triggers it, deliberately. **This is a known, accepted
+residual gap, not an oversight**: a compromised contact account — a real
+teammate's mailbox taken over by an attacker — would send content that
+is indistinguishable, at the provenance layer, from that same teammate
+writing to the user honestly. Cordon's trust model has no way to tell
+"the real Alice" from "an attacker who now controls Alice's account,"
+because provenance only tracks *where a value came from* (which mock
+mailbox record), never *whether the account itself is still
+trustworthy*. Closing this would need something Cordon doesn't have —
+e.g. anomaly detection on a contact's usual behavior, or per-message
+authentication — not a provenance rule. Widening P6 to also gate CONTACT
+content was considered and rejected: it would confirm-gate the large
+majority of ordinary, legitimate replies to real contacts (see
+`docs/results.md`'s P6 false-positive analysis), trading away almost all
+the engine's remaining ALLOW-without-asking utility for a threat
+(compromised contacts) P6 isn't actually positioned to detect anyway.
+
+**Config.** `CORDON_POLICY_VERSION=v1` (P1–P5 only, byte-identical to
+pre-P6 behavior) or `v2` (P1–P6, default). Every harness result file
+records which one was active.
 
 ## Reading attack success rate: two tiers
 

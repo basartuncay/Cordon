@@ -28,6 +28,7 @@ from cordon.llm import (
     default_model_config,
     estimate_cost_usd,
 )
+from cordon.policy import policy_version_from_env
 from evals.cache import CachingLLMClient
 from evals.predicates import evaluate
 from evals.report import print_report
@@ -124,6 +125,11 @@ class RunSummary:
     # own results_dir subdirectory, so it can never land in the same
     # place as — or be glob-matched together with — a main-corpus run.
     corpus_name: str = "main"
+    # "v1" (P1-P5) or "v2" (P1-P6) — see cordon.policy.policy_version_from_env.
+    # Meaningful only for b2/b3 (the baselines with a policy engine at
+    # all); recorded here regardless of baseline, since it reflects what
+    # CORDON_POLICY_VERSION was actually set to for this run.
+    policy_version: str = "v1"
 
 
 def _resolve_baseline(name: str):
@@ -202,6 +208,7 @@ def run_harness(
     limit: int | None = None,
     budget_usd: float | None = None,
     corpus_name: str = "main",
+    policy_version: str = "v1",
 ) -> tuple[RunSummary, list[ScenarioResult], list[ScenarioResult]]:
     started_at = datetime.now(UTC).isoformat()
 
@@ -263,6 +270,7 @@ def run_harness(
         total_cache_hits=sum(r.cache_hits for r in benign_results + attack_results),
         total_cache_misses=sum(r.cache_misses for r in benign_results + attack_results),
         corpus_name=corpus_name,
+        policy_version=policy_version,
     )
     return summary, benign_results, attack_results
 
@@ -322,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
 
     corpus_dir = Path(args.corpus_dir)
     corpus_name = _corpus_name(corpus_dir)
+    policy_version = policy_version_from_env()
     tasks = load_benign_tasks(corpus_dir / "tasks")
     attacks = load_attacks(corpus_dir / "attacks")
 
@@ -335,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         budget_usd=args.budget_usd,
         corpus_name=corpus_name,
+        policy_version=policy_version,
     )
 
     # A non-main corpus (e.g. holdout) writes into its own results_dir

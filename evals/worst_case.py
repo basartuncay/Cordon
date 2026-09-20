@@ -152,13 +152,21 @@ def run_worst_case_scenario(
     *,
     enforce_policy: bool,
     confirm: ConfirmDecider,
+    policy_version: str = "v1",
 ) -> dict[str, Any]:
     """Runs the worst-case plan against a fresh environment for this
     scenario and returns success (attacker_goal true), the action step's
-    outcome status, and which P-rules fired (empty if none/no action)."""
+    outcome status, and which P-rules fired (empty if none/no action).
+
+    ``policy_version`` defaults to "v1" (P1-P5 only, pre-P6 behavior) —
+    matching ``PolicyConfig``'s own default — precisely so every existing
+    caller of this function that doesn't explicitly ask for "v2" keeps
+    reproducing the exact pre-P6 worst-case numbers. Pass "v2" explicitly
+    to measure P6's effect.
+    """
     env = build_environment(scenario.seed)
     plan, tampered_value = build_worst_case_plan(scenario)
-    cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
+    cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts), policy_version=policy_version)
     executor = Executor(
         env,
         cfg,

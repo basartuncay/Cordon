@@ -228,6 +228,20 @@ def test_corpus_name_is_main_for_the_default_corpus_dir():
     assert _corpus_name(CORPUS_DIR) == "main"
 
 
+def test_run_harness_defaults_policy_version_to_v1():
+    tasks = [make_benign_task("b1")]
+    summary, _, _ = run_harness(run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg())
+    assert summary.policy_version == "v1"
+
+
+def test_run_harness_records_a_custom_policy_version():
+    tasks = [make_benign_task("b1")]
+    summary, _, _ = run_harness(
+        run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg(), policy_version="v2"
+    )
+    assert summary.policy_version == "v2"
+
+
 def test_corpus_name_is_the_directory_name_for_any_other_corpus_dir(tmp_path):
     assert _corpus_name(CORPUS_DIR / "holdout") == "holdout"
     other = tmp_path / "some-other-corpus"

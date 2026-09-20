@@ -20,7 +20,7 @@ from cordon.executor import ExecutionResult, Executor
 from cordon.llm import CacheStats, LLMClient, LLMUsage
 from cordon.plan import QUARANTINE_TOOL, TEMPLATE_TOOL
 from cordon.planner import PlannerError, make_plan
-from cordon.policy import SIDE_EFFECT_TOOLS, PolicyConfig
+from cordon.policy import SIDE_EFFECT_TOOLS, PolicyConfig, policy_version_from_env
 from cordon.provenance import Tainted
 from cordon.quarantine import extract as quarantine_extract
 from evals.baselines.b0 import RunResult
@@ -96,6 +96,7 @@ def _run_cordon(
     confirm: ConfirmDecider | None = None,
     planner_llm: LLMClient | None = None,
     quarantine_llm: LLMClient | None = None,
+    policy_version: str | None = None,
 ) -> RunResult:
     planner_llm = planner_llm or llm
     quarantine_llm = quarantine_llm or llm
@@ -103,6 +104,12 @@ def _run_cordon(
     cache_stats = CacheStats()
     confirm = confirm or _default_confirm_decider()
     confirm_log = ConfirmLog()
+    # None means "not explicitly overridden" — read CORDON_POLICY_VERSION
+    # (default v2), same as _default_confirm_decider() does for
+    # CORDON_CONFIRM_MODE. run_b2/run_b3's public signature never passes
+    # an override, so a real harness-driven run is always env-driven;
+    # tests and comparison scripts pass policy_version explicitly instead.
+    policy_version = policy_version if policy_version is not None else policy_version_from_env()
 
     try:
         plan = make_plan(user_request, planner_llm, usage=usage, cache_stats=cache_stats)
@@ -123,7 +130,7 @@ def _run_cordon(
             text, schema, instruction, quarantine_llm, usage=usage, cache_stats=cache_stats
         )
 
-    cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts))
+    cfg = PolicyConfig(contacts_allowlist=set(env.mailbox.contacts), policy_version=policy_version)
     executor = Executor(
         env,
         cfg,

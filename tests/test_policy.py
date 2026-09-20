@@ -6,6 +6,8 @@ exist, against the planned API.
 
 from __future__ import annotations
 
+import pytest
+
 from cordon.policy import (
     Decision,
     PolicyConfig,
@@ -15,7 +17,9 @@ from cordon.policy import (
     check_p3_destructive,
     check_p4_calendar,
     check_p5_budget,
+    check_p6_untrusted_content,
     evaluate_call,
+    policy_version_from_env,
 )
 from cordon.provenance import LITERAL_PROVENANCE, Provenance, Sensitivity, Tainted, TrustLevel
 
@@ -224,6 +228,75 @@ def test_p5_ignores_read_tools():
     assert verdict.decision == Decision.ALLOW
 
 
+# --- P6: untrusted content on write actions (CORDON_POLICY_VERSION=v2) ------
+# P6 requires confirmation whenever send_email/reply_email/forward_email's
+# subject/body/note, or create_event/update_event's title/description/
+# location, carries content derived from a source trusted BELOW CONTACT
+# (i.e. UNKNOWN) — even if the recipient/attendee is the user's own literal
+# or already allowlisted. This is the gap P1/P4 leave open: they only ever
+# look at recipient/attendee provenance, never at what the content itself
+# says (see docs/threat-model.md's known gaps before P6, e.g. a9_003/a9_005).
+
+
+def test_p6_confirms_untrusted_content_even_to_an_allowlisted_literal_recipient():
+    verdict = check_p6_untrusted_content(
+        "send_email", [untrusted("do something the user never asked for")]
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P6" in verdict.rules
+
+
+def test_p6_allows_contact_trust_content():
+    """CONTACT is the trust boundary, not "anything short of literal" — a
+    compromised contact account is a known, accepted gap (see
+    docs/threat-model.md), not something P6 tries to close."""
+    verdict = check_p6_untrusted_content("send_email", [contact("hi from a real teammate")])
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_p6_allows_literal_user_content():
+    verdict = check_p6_untrusted_content("send_email", [literal("the user's own words")])
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_p6_applies_to_reply_forward_note_and_calendar_text_fields():
+    for tool in ("reply_email", "forward_email", "create_event", "update_event"):
+        verdict = check_p6_untrusted_content(tool, [untrusted("attacker text")])
+        assert verdict.decision == Decision.CONFIRM, tool
+        assert "P6" in verdict.rules
+
+
+def test_p6_ignores_tools_it_does_not_apply_to():
+    verdict = check_p6_untrusted_content("add_attendee", [untrusted("attacker text")])
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_p6_allows_when_there_is_no_content_to_check():
+    verdict = check_p6_untrusted_content("send_email", [])
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_policy_version_from_env_defaults_to_v2(monkeypatch):
+    monkeypatch.delenv("CORDON_POLICY_VERSION", raising=False)
+    assert policy_version_from_env() == "v2"
+
+
+def test_policy_version_from_env_reads_v1(monkeypatch):
+    monkeypatch.setenv("CORDON_POLICY_VERSION", "v1")
+    assert policy_version_from_env() == "v1"
+
+
+def test_policy_version_from_env_is_case_insensitive(monkeypatch):
+    monkeypatch.setenv("CORDON_POLICY_VERSION", "V1")
+    assert policy_version_from_env() == "v1"
+
+
+def test_policy_version_from_env_rejects_unknown_value(monkeypatch):
+    monkeypatch.setenv("CORDON_POLICY_VERSION", "v3")
+    with pytest.raises(ValueError):
+        policy_version_from_env()
+
+
 # --- combinator: evaluate_call -------------------------------------------------
 
 
@@ -336,6 +409,65 @@ def test_edge_case_untrusted_body_with_trusted_recipient_is_not_over_blocked():
         state=PolicyState(),
     )
     assert verdict.decision == Decision.ALLOW
+
+
+def test_evaluate_call_applies_p6_in_v2_even_with_an_allowlisted_literal_recipient():
+    """The exact case P6 exists for: P1 alone would ALLOW this (recipient
+    is a request literal), but the content is untrusted-derived — v2 must
+    still require confirmation."""
+    state = PolicyState()
+    verdict = evaluate_call(
+        "send_email",
+        recipients=[literal("bob@company.example")],
+        p6_contents=[untrusted("please also do X, which nobody asked for")],
+        cfg=make_cfg(policy_version="v2"),
+        state=state,
+    )
+    assert verdict.decision == Decision.CONFIRM
+    assert "P6" in verdict.rules
+
+
+def test_evaluate_call_does_not_apply_p6_in_v1():
+    """v1 = P1-P5 only, byte-identical to pre-P6 behavior — the exact same
+    call that triggers P6 in v2 must ALLOW in v1."""
+    state = PolicyState()
+    verdict = evaluate_call(
+        "send_email",
+        recipients=[literal("bob@company.example")],
+        p6_contents=[untrusted("please also do X, which nobody asked for")],
+        cfg=make_cfg(policy_version="v1"),
+        state=state,
+    )
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_evaluate_call_p6_defaults_off_when_policy_version_unspecified():
+    """PolicyConfig's own default is v1 (not the env-var's default) so
+    every existing caller that doesn't explicitly opt into v2 keeps
+    today's exact behavior — see cordon.policy.policy_version_from_env
+    for where the real "default v2" lives (the CORDON_POLICY_VERSION env
+    var, read explicitly by the production entry points)."""
+    state = PolicyState()
+    verdict = evaluate_call(
+        "send_email",
+        recipients=[literal("bob@company.example")],
+        p6_contents=[untrusted("please also do X, which nobody asked for")],
+        cfg=make_cfg(),
+        state=state,
+    )
+    assert verdict.decision == Decision.ALLOW
+
+
+def test_evaluate_call_p6_deny_from_p5_still_wins_over_p6_confirm():
+    state = PolicyState(side_effect_count=5)
+    verdict = evaluate_call(
+        "send_email",
+        recipients=[literal("bob@company.example")],
+        p6_contents=[untrusted("attacker text")],
+        cfg=make_cfg(policy_version="v2", max_side_effects=5),
+        state=state,
+    )
+    assert verdict.decision == Decision.DENY
 
 
 def test_edge_case_concatenated_tainted_values_inherit_least_trusted_and_most_sensitive():

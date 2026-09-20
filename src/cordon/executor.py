@@ -277,6 +277,7 @@ class Executor:
         contents = self._extract_contents(step.tool, plain_args, tainted_args)
         calendar_fields = self._extract_calendar_fields(step.tool, tainted_args)
         calendar_recipients = self._extract_calendar_recipients(step.tool, tainted_args)
+        p6_contents = self._extract_own_contents(step.tool, tainted_args)
 
         verdict = evaluate_call(
             step.tool,
@@ -284,6 +285,7 @@ class Executor:
             contents=contents,
             calendar_recipients=calendar_recipients,
             calendar_fields=calendar_fields,
+            p6_contents=p6_contents,
             cfg=self.policy_cfg,
             state=self._policy_state,
         )
@@ -395,14 +397,25 @@ class Executor:
             return [Tainted(original.sender, prov)]
         return []
 
-    def _extract_contents(
-        self, tool: str, plain_args: dict[str, Any], tainted_args: dict[str, Any]
-    ) -> list[Tainted[Any]]:
+    def _extract_own_contents(self, tool: str, tainted_args: dict[str, Any]) -> list[Tainted[Any]]:
+        """The tool's own content-bearing args (subject/body/note/title/
+        description/location) — same field set P2 inspects, but never
+        includes forward_email's forwarded original message (only
+        _extract_contents adds that, for P2). This is exactly P6's
+        content set: forwarding an untrusted original is the whole point
+        of the forward action, not a surprise injection, so P6 exempts
+        it and only checks the forwarder's own added `note`."""
         contents: list[Tainted[Any]] = []
         for name in CONTENT_ARG_NAMES.get(tool, []):
             value = tainted_args.get(name)
             if isinstance(value, Tainted):
                 contents.append(value)
+        return contents
+
+    def _extract_contents(
+        self, tool: str, plain_args: dict[str, Any], tainted_args: dict[str, Any]
+    ) -> list[Tainted[Any]]:
+        contents = self._extract_own_contents(tool, tainted_args)
         if tool == "forward_email":
             # The actual outgoing message is the original subject/body plus
             # the note, not just the note — P2 must see all of it.
