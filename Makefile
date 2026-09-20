@@ -1,4 +1,4 @@
-.PHONY: eval test lint fmt
+.PHONY: eval test lint fmt holdout-check
 
 BASELINE ?= b0
 
@@ -13,3 +13,6 @@ lint:
 
 fmt:
 	uv run ruff format .
+
+holdout-check:
+	uv run python -m evals.holdout_check

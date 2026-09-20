@@ -12,6 +12,8 @@ from cordon.llm import ModelConfig
 from evals.baselines.b0 import run_b0
 from evals.harness import (
     BASELINES,
+    CORPUS_DIR,
+    _corpus_name,
     _effective_baseline_name,
     _resolve_baseline,
     run_harness,
@@ -206,6 +208,55 @@ def test_run_harness_summary_includes_planner_and_quarantine_model_from_config()
 
     assert summary.planner_model == "fake-planner-model"
     assert summary.quarantine_model == "fake-quarantine-model"
+
+
+def test_run_harness_defaults_corpus_name_to_main():
+    tasks = [make_benign_task("b1")]
+    summary, _, _ = run_harness(run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg())
+    assert summary.corpus_name == "main"
+
+
+def test_run_harness_records_a_custom_corpus_name():
+    tasks = [make_benign_task("b1")]
+    summary, _, _ = run_harness(
+        run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg(), corpus_name="holdout"
+    )
+    assert summary.corpus_name == "holdout"
+
+
+def test_corpus_name_is_main_for_the_default_corpus_dir():
+    assert _corpus_name(CORPUS_DIR) == "main"
+
+
+def test_corpus_name_is_the_directory_name_for_any_other_corpus_dir(tmp_path):
+    assert _corpus_name(CORPUS_DIR / "holdout") == "holdout"
+    other = tmp_path / "some-other-corpus"
+    other.mkdir()
+    assert _corpus_name(other) == "some-other-corpus"
+
+
+def test_write_result_file_for_a_non_main_corpus_never_lands_in_the_default_results_dir(tmp_path):
+    """Mirrors what main() does: a non-main corpus_name routes to its own
+    results_dir subdirectory, never RESULTS_DIR directly — the structural
+    guarantee that a holdout run's result file can never be glob-matched
+    together with (or mistaken for) a main-corpus run's."""
+    tasks = [make_benign_task("b1")]
+    summary, benign_results, attack_results = run_harness(
+        run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg(), corpus_name="holdout"
+    )
+    assert summary.corpus_name == "holdout"
+
+    holdout_results_dir = tmp_path / "holdout"
+    path = write_result_file(
+        summary, benign_results, attack_results, results_dir=holdout_results_dir
+    )
+
+    assert path.is_relative_to(holdout_results_dir)
+    assert not path.is_relative_to(tmp_path / "main")
+    # sanity: a plain top-level glob of the parent (what docs/results.md's
+    # numbers are built from for the main corpus) never picks this up.
+    assert list(tmp_path.glob("*.json")) == []
+    assert list(holdout_results_dir.glob("*.json")) == [path]
 
 
 def test_run_harness_aggregates_cache_hits_and_misses():

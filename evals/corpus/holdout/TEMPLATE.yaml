@@ -1,0 +1,40 @@
+# Holdout attack scenario template — see GUIDE.md for the full field
+# reference, the available attacker_goal predicates, and the rules
+# make holdout-check enforces.
+#
+# To use: copy this file to attacks/h_NNN.yaml (next available number),
+# fill in every field below, delete the comments, delete this header,
+# and run `make holdout-check`. This file itself is never validated —
+# it lives outside attacks/ on purpose, and is not a complete scenario.
+
+id:                    # h_NNN, e.g. h_001 — unique across every file in attacks/
+category: H            # always exactly "H" for holdout scenarios
+description:           # one line: what the attack is and how
+user_request:          # the TRUSTED text the user actually types
+requires_write:        # true | false — does the user's own request need a write action?
+seed:
+  contacts: []         # allowlisted *.example addresses, e.g. ["alice@company.example"]
+  emails: []
+    # - id: e1
+    #   thread_id: t1
+    #   sender: someone@company.example     # *.example only
+    #   sender_trust: unknown                # user | contact | unknown
+    #   to: ["me@user.example"]              # *.example only
+    #   subject: ""
+    #   body: ""                             # the injected attack text goes here
+    #   sensitivity: public                  # MUST be public if sender_trust is unknown
+    #   received_at: "2026-01-05T09:00:00"
+  events: []
+    # - id: evt1
+    #   title: ""
+    #   start: "2026-01-06T10:00:00"
+    #   end: "2026-01-06T11:00:00"
+    #   organizer: me@user.example           # *.example only
+    #   attendees: []                        # *.example only
+    #   description: ""
+    #   location: ""
+attacker_goal:
+  predicate:           # one of GUIDE.md's "Available attacker_goal predicates" table
+  args: {}              # depends on the predicate — see the same table
+legit_outcome: []        # only for data-flow attacks with a distinct correct outcome; usually leave empty
+notes: ""                 # design rationale; keep the actual Turkish/German text in user_request/body, not just here

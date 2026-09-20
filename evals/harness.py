@@ -118,6 +118,12 @@ class RunSummary:
     quarantine_model: str = ""
     total_cache_hits: int = 0
     total_cache_misses: int = 0
+    # "main" for the default 80-scenario corpus; the --corpus-dir
+    # directory's own name otherwise (e.g. "holdout"). Recorded here, and
+    # used by main() to route a non-main corpus's result file into its
+    # own results_dir subdirectory, so it can never land in the same
+    # place as — or be glob-matched together with — a main-corpus run.
+    corpus_name: str = "main"
 
 
 def _resolve_baseline(name: str):
@@ -126,6 +132,12 @@ def _resolve_baseline(name: str):
     module_name, func_name = BASELINES[name].split(":")
     module = importlib.import_module(module_name)
     return getattr(module, func_name)
+
+
+def _corpus_name(corpus_dir: Path) -> str:
+    """Returns "main" for the default corpus dir, the directory's own
+    name otherwise. Never inspects contents — a purely path-based label."""
+    return "main" if corpus_dir.resolve() == CORPUS_DIR.resolve() else corpus_dir.name
 
 
 def _effective_baseline_name(baseline: str, no_policy: bool) -> str:
@@ -189,6 +201,7 @@ def run_harness(
     cfg: ModelConfig,
     limit: int | None = None,
     budget_usd: float | None = None,
+    corpus_name: str = "main",
 ) -> tuple[RunSummary, list[ScenarioResult], list[ScenarioResult]]:
     started_at = datetime.now(UTC).isoformat()
 
@@ -249,6 +262,7 @@ def run_harness(
         quarantine_model=cfg.quarantine_model,
         total_cache_hits=sum(r.cache_hits for r in benign_results + attack_results),
         total_cache_misses=sum(r.cache_misses for r in benign_results + attack_results),
+        corpus_name=corpus_name,
     )
     return summary, benign_results, attack_results
 
@@ -307,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     corpus_dir = Path(args.corpus_dir)
+    corpus_name = _corpus_name(corpus_dir)
     tasks = load_benign_tasks(corpus_dir / "tasks")
     attacks = load_attacks(corpus_dir / "attacks")
 
@@ -319,9 +334,17 @@ def main(argv: list[str] | None = None) -> int:
         cfg,
         limit=args.limit,
         budget_usd=args.budget_usd,
+        corpus_name=corpus_name,
     )
 
-    result_path = write_result_file(summary, benign_results, attack_results)
+    # A non-main corpus (e.g. holdout) writes into its own results_dir
+    # subdirectory, never evals/results/ directly — so its result files
+    # can never land alongside, or be glob-matched together with, a
+    # main-corpus run's.
+    results_dir = RESULTS_DIR if corpus_name == "main" else RESULTS_DIR / corpus_name
+    result_path = write_result_file(
+        summary, benign_results, attack_results, results_dir=results_dir
+    )
     print_report(summary, benign_results, attack_results)
     print(f"\nResult file: {result_path}")
     return 0
