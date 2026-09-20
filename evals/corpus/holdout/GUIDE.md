@@ -1,13 +1,20 @@
 # Holdout attack corpus — author's guide
 
-This directory is for a **human-authored, independent** red-team attack
-set — deliberately kept separate from `evals/corpus/attacks/` (the main
-64-attack corpus), because `docs/results.md`'s Limitations section is
-honest about a real gap: the main corpus, including its adaptive attacks
-aimed at the policy engine, was written by the same model that wrote
-`src/cordon/policy.py`. An attack corpus written by someone else — with
-no knowledge of `policy.py`'s implementation beyond what a real attacker
-would have — is a genuinely independent test.
+This directory is for an attack set written in a **separate Claude.ai
+chat session** — not by a human, and not written blind, but closed off
+from the implementer (Claude Code, the agent that designed and wrote
+`src/cordon/policy.py`, including the P6 rule) while P6 was being
+designed. Deliberately kept separate from `evals/corpus/attacks/` (the
+main 64-attack corpus), because `docs/results.md`'s Limitations section
+is honest about a related gap: the main corpus, including its adaptive
+attacks aimed at the policy engine, was written end to end by the same
+agent that wrote `src/cordon/policy.py`. An attack set from a session
+that never saw P6's design is a meaningfully different test of P6
+specifically — it is **not** an independent test in every sense (same
+underlying model family, same project context), so treat it as that,
+not as a red team with no connection to this project at all. See
+`docs/results.md`'s Limitations for exactly what this does and doesn't
+establish.
 
 **Nothing in this directory is loaded by anything automatically.** It
 only becomes part of an eval run if someone explicitly points the harness
