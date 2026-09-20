@@ -81,6 +81,21 @@ B3 replays B2's cached planner and quarantine calls (the policy engine only chan
 - Auto-deny is safer than a real user would be; auto-approve is the opposite extreme. Neither models confirmation fatigue.
 - No real Gmail/Calendar mode, no AgentDojo adapter.
 
+## Project status and future work
+
+**Done (M0–M3):** repo scaffold, tooling and CI; a mock mailbox/calendar with typed read/write tools; the undefended (B0) and spotlighting (B1) baselines; the planner/executor/quarantine pipeline with taint tracking; the P1–P5 policy engine with no-LLM unit tests; an 80-scenario corpus (16 benign, 64 attacks across 10 categories, including Turkish/German attacks); a full B0–B3 real-model evaluation run with tiered/primary-secondary ASR, utility, and a worst-case (no-LLM) analysis, all written up honestly in `docs/results.md`.
+
+**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline.
+
+**Plausible next steps**, roughly in order of how directly they'd close a documented gap:
+
+- Bind every side-effecting call back to a specific piece of the user's own request, so content flowing to an already-allowlisted recipient the user never asked to message (the `a9_003`-style gap) has something to be checked against, not just provenance.
+- A "safe re-query" path for an empty search/list result — letting the planner (or a bounded retry loop) try a different query instead of ending the plan, which is part of why B2/B3's benign utility trails B0/B1's on this run.
+- An attack corpus (or at least the adaptive A9 attacks) written or reviewed by someone other than the model that wrote `policy.py` — the current corpus can only find gaps its own author could imagine.
+- A small study of real human confirmation behavior, to replace the two artificial ceilings (auto-deny, auto-approve) with something closer to actual confirmation-fatigue rates.
+
+This list is deliberately short and un-scored — see `docs/results.md`'s Limitations section for the honest cost/benefit numbers behind each item, and `docs/threat-model.md`'s Known gaps for the exact scenarios that demonstrate them.
+
 ## Reproduce
 
 Requires [uv](https://docs.astral.sh/uv/). The offline test suite needs no API key.
