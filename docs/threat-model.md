@@ -157,14 +157,20 @@ was fixed or is a confirmed, documented gap:
   `create_event`/`update_event` and both trigger P4 like any other
   untrusted-derived calendar field.
 - **Structural, by design: a CONFIRM decision is binary, it can't
-  "correct" a tampered value.** For every A10 data-flow attack, blocking
-  the confirmation blocks the *entire* action — the correct, untampered
-  outcome (`legit_outcome`) doesn't happen either. "Utility under attack"
-  for these scenarios is 0% under auto-deny not because Cordon is
+  "correct" a tampered value.** For an A10 data-flow attack whose
+  tampered value actually reaches a CONFIRM gate, blocking that
+  confirmation blocks the *entire* action — the correct, untampered
+  outcome (`legit_outcome`) doesn't happen either, not because Cordon is
   confused about which value is right, but because there is no
-  "approve with correction" path, only approve-as-proposed or reject.
-  A human who read the confirmation prompt carefully enough to spot the
-  tampering would still have to reject-and-redo, not fix-in-place.
+  "approve with correction" path, only approve-as-proposed or reject. A
+  human who read the confirmation prompt carefully enough to spot the
+  tampering would still have to reject-and-redo, not fix-in-place. This
+  does **not** mean 0% utility under attack across the board: several
+  A10 scenarios never reach a CONFIRM in the first place (e.g. the
+  tampered value lands on an already-allowlisted recipient, which P1
+  auto-allows), so the correct action still happens for those. Measured
+  across the full A10 set under real Haiku B3-deny, utility under attack
+  is 41.7% (10/24) — see `docs/results.md`, not 0%.
 - **The overall P5 budget and the per-class budgets are static per run,**
   not adaptive to how "risky" the plan already looks (e.g. a plan that's
   already triggered three CONFIRMs isn't held to a tighter budget on its
