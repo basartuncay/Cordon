@@ -1,10 +1,15 @@
 # Cordon — a prompt-injection-resistant mail & calendar agent (working name)
 
-> **Status at closeout:** M0–M3 are complete; M4 (AgentDojo adapter) and
-> real Gmail/Calendar mode were never started. Final, measured results
-> live in `docs/results.md`, not predicted anywhere else in this file.
-> Everything below is the **original project plan**, kept as historical
-> context — read it as intent at the time, not a current status claim.
+> **Status at closeout:** M0–M3 are complete (v0.1). v0.2 adds P6 (a
+> content-trust gate, `CORDON_POLICY_VERSION=v1|v2`) and a 15-scenario
+> holdout corpus written in a separate Claude.ai chat session — not
+> human-written, not blind, but closed off from the implementer (Claude
+> Code) during P6's design. M4's AgentDojo adapter and a real
+> Gmail/Calendar mode were never started. Final, measured results live in
+> `docs/results.md` (main corpus) and `docs/results-holdout.md` (holdout),
+> not predicted anywhere else in this file. Everything below is the
+> **original project plan**, kept as historical context — read it as
+> intent at the time, not a current status claim.
 
 ## One-line pitch
 A CaMeL-inspired agent for Gmail/Calendar where **untrusted email content can never decide what the agent does**, enforced by provenance tracking and a deterministic policy engine, and *measured* against an undefended baseline.
