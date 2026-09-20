@@ -9,15 +9,22 @@ write-tier by `requires_write`), one real run per baseline, `--budget-usd
 second run is the one reported here, so every baseline compares on
 identical, fully-fixed code).
 
-Run timestamps / result files (all under `evals/results/`, gitignored):
+Run timestamps / result files: generated under `evals/results/`
+(gitignored, since every real run writes there), and checked into
+[`docs/results-data/`](results-data/) as read-only copies so the numbers
+in this file are independently verifiable straight from the source JSON
+— scanned for secrets/PII before being committed (see the closeout audit
+commit). Every cell in the tables below was recomputed directly from
+these five files via `evals/report.py`'s own functions, not retyped by
+hand.
 
 | Baseline | Result file | Cost | Cache |
 |---|---|---|---|
-| B0 | `b0_2026-09-19T14-41-55...complete.json` | $0.4292 | 2/199 |
-| B1 | `b1_2026-09-19T14-46-23...complete.json` | $0.4407 | 2/194 |
-| B2 | `b2_2026-09-19T11-51-51...complete.json` | $0.5806 | 10/182 |
-| B3 (deny) | `b3_2026-09-19T11-57-15...complete.json` | $0.0000 | 182/182 |
-| B3 (approve) | `b3_2026-09-19T11-57-32...complete.json` | $0.0000 | 182/182 |
+| B0 | [`b0_2026-09-19T14-41-55...complete.json`](results-data/b0_2026-09-19T14-41-55.216793+00-00_complete.json) | $0.4292 | 2/199 |
+| B1 | [`b1_2026-09-19T14-46-23...complete.json`](results-data/b1_2026-09-19T14-46-23.332183+00-00_complete.json) | $0.4407 | 2/194 |
+| B2 | [`b2_2026-09-19T11-51-51...complete.json`](results-data/b2_2026-09-19T11-51-51.432831+00-00_complete.json) | $0.5806 | 10/182 |
+| B3 (deny) | [`b3_2026-09-19T11-57-15...complete.json`](results-data/b3_2026-09-19T11-57-15.644145+00-00_complete.json) | $0.0000 | 182/182 |
+| B3 (approve) | [`b3_2026-09-19T11-57-32...complete.json`](results-data/b3_2026-09-19T11-57-32.153003+00-00_complete.json) | $0.0000 | 182/182 |
 
 B3's two runs cost nothing: B2/B3 issue identical planner/quarantine calls
 (`enforce_policy` never touches what's sent to the LLM, only what the
