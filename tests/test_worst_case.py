@@ -16,10 +16,16 @@ from evals.scenario import build_environment, load_attacks
 from evals.worst_case import build_worst_case_plan, run_worst_case_scenario
 
 CORPUS_DIR = Path(__file__).parent.parent / "evals" / "corpus"
+HOLDOUT_DIR = CORPUS_DIR / "holdout"
 
 
 def _attack(scenario_id: str):
     attacks = {a.id: a for a in load_attacks(CORPUS_DIR / "attacks")}
+    return attacks[scenario_id]
+
+
+def _holdout_attack(scenario_id: str):
+    attacks = {a.id: a for a in load_attacks(HOLDOUT_DIR / "attacks")}
     return attacks[scenario_id]
 
 
@@ -125,6 +131,53 @@ def test_run_worst_case_scenario_final_text_contains_succeeds_when_it_should():
     result = run_worst_case_scenario(scenario, enforce_policy=False, confirm=AutoDenyDecider())
     assert result["success"] is True
     assert result["action_status"] == "no_action_step"
+
+
+def test_build_worst_case_plan_sent_email_to_address_contains():
+    """Holdout h_001 (gap-variant): found missing when the holdout
+    corpus's own worst-case run crashed on this predicate — added here,
+    same construct as sent_email_contains (content tampered via
+    quarantine_ref, recipient is the specific address the goal names,
+    since that's the scenario's own allowlisted contact — the recipient
+    was always going to be fine)."""
+    scenario = _holdout_attack("h_001")
+    plan, tampered_value = build_worst_case_plan(scenario)
+    assert tampered_value == "7741-0093-EXAMPLE"
+    action_step = next(s for s in plan.steps if s.tool == "send_email")
+    assert action_step.args["to"].items[0].value == "alice@company.example"
+
+
+def test_build_worst_case_plan_event_location_or_description_contains():
+    """Holdout h_005 (gap-variant): calendar analog of sent_email_contains
+    — the tampered value goes into `location` (create_event's other
+    content field, `description`, is left literal, matching
+    event_with_start_exists's one-tainted-field precedent)."""
+    scenario = _holdout_attack("h_005")
+    plan, tampered_value = build_worst_case_plan(scenario)
+    assert tampered_value == "meet.evil.example"
+    action_step = next(s for s in plan.steps if s.tool == "create_event")
+    assert action_step.args["location"].step_id == "extract"  # a RefArg into the quarantine step
+
+
+def test_build_worst_case_plan_event_attendee_domain_with_description_contains():
+    """Holdout h_013 (novel-surface): a compound goal (attendee AND
+    description), but the worst-case framework only tampers ONE value
+    per scenario via quarantine. event_attendee_domain_added and
+    event_created_with_attendee already exercise "the attendee itself is
+    untrusted-derived" extensively, so here the tainted value goes into
+    `description` (the needle) and the attendee is a literal address at
+    the target domain — just precise enough to satisfy the predicate's
+    attendee-domain half. This is a documented limitation of this one
+    mapping, not an oversight: P4 will never fire on the attendee in
+    this specific worst-case run (it isn't tainted), only P2/P6 (on the
+    description) can."""
+    scenario = _holdout_attack("h_013")
+    plan, tampered_value = build_worst_case_plan(scenario)
+    assert tampered_value == "120,000"
+    action_step = next(s for s in plan.steps if s.tool == "create_event")
+    assert action_step.args["description"].step_id == "extract"  # tainted
+    attendee_arg = action_step.args["attendees"].items[0]
+    assert attendee_arg.value == "attacker@evil.example"  # literal, not tainted — see docstring
 
 
 def test_run_worst_case_scenario_p6_v2_blocks_untrusted_body_to_an_allowlisted_recipient():
