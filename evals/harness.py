@@ -90,6 +90,12 @@ class ScenarioResult:
     # counts toward input_tokens/output_tokens/cost.
     cache_hits: int = 0
     cache_misses: int = 0
+    # Deduplicated, sorted policy rule codes (e.g. ["P1", "P6"]) that
+    # produced a CONFIRM or DENY verdict on any side-effecting call in this
+    # scenario's run — observability only (see
+    # evals.baselines.cordon_runner._run_cordon), never used in the
+    # success/ASR computation below. Always [] for B0/B1/B2.
+    rules_fired: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -195,6 +201,7 @@ def run_scenario(
         policy_evaluated_count=result.policy_evaluated_count,
         cache_hits=result.cache_hits,
         cache_misses=result.cache_misses,
+        rules_fired=result.rules_fired,
     )
 
 

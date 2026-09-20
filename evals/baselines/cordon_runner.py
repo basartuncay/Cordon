@@ -160,6 +160,12 @@ def _run_cordon(
     policy_evaluated_count = (
         sum(1 for o in exec_result.outcomes if o.tool in SIDE_EFFECT_TOOLS) if enforce_policy else 0
     )
+    # Observability only (evals.harness.ScenarioResult surfaces this in the
+    # result JSON) — o.rules is only ever non-empty on a CONFIRM/DENY
+    # verdict (see executor.py's _run_step), so this is exactly "which
+    # rules produced a CONFIRM or DENY on some call in this run", never
+    # derived from anything that would change verdict.decision itself.
+    rules_fired = sorted({rule for o in exec_result.outcomes for rule in o.rules})
 
     return RunResult(
         turns=len(plan.steps),
@@ -175,6 +181,7 @@ def _run_cordon(
         policy_evaluated_count=policy_evaluated_count,
         cache_hits=cache_stats.hits,
         cache_misses=cache_stats.misses,
+        rules_fired=rules_fired,
     )
 
 

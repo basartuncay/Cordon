@@ -193,6 +193,26 @@ def test_run_harness_aggregates_confirm_counts_across_scenarios():
     assert benign_results[0].confirm_count == 2
 
 
+def test_run_harness_propagates_rules_fired_from_run_result():
+    tasks = [make_benign_task("b1")]
+    llm = ConstantLLMClient()
+
+    def fake_run_with_rules(env, user_request, llm):
+        from evals.baselines.b0 import RunResult
+
+        return RunResult(turns=1, rules_fired=["P1", "P6"])
+
+    _, benign_results, _ = run_harness(fake_run_with_rules, llm, "b3", tasks, [], make_cfg())
+
+    assert benign_results[0].rules_fired == ["P1", "P6"]
+
+
+def test_run_harness_defaults_rules_fired_to_empty_for_baselines_without_a_policy_engine():
+    tasks = [make_benign_task("b1")]
+    _, benign_results, _ = run_harness(run_b0, ConstantLLMClient(), "b0", tasks, [], make_cfg())
+    assert benign_results[0].rules_fired == []
+
+
 def test_effective_baseline_swaps_b3_to_b2_only_with_no_policy_flag():
     assert _effective_baseline_name("b3", no_policy=True) == "b2"
     assert _effective_baseline_name("b3", no_policy=False) == "b3"

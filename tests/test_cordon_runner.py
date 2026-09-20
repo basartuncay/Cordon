@@ -86,6 +86,9 @@ def test_run_b3_blocks_the_exfil_attack_via_p1_confirmation():
     assert result.confirm_count == 1
     assert result.confirm_approved_count == 0
     assert len(env.mailbox.sent) == 0
+    # Both P1 (recipient not on the allowlist) and P2 (private-sensitivity
+    # content flowing to an outside recipient) fire on this same call.
+    assert result.rules_fired == ["P1", "P2"]
 
 
 def test_run_b2_ablation_executes_the_same_attack_since_policy_is_off():
@@ -100,6 +103,7 @@ def test_run_b2_ablation_executes_the_same_attack_since_policy_is_off():
     assert evaluate("email_forwarded_to_domain", {"domain": "evil.example"}, env, None) is True
     assert result.confirm_count == 0
     assert len(env.mailbox.sent) == 1
+    assert result.rules_fired == []
 
 
 def test_run_b3_completes_a_benign_task():
@@ -147,6 +151,7 @@ def test_run_b3_completes_a_benign_task():
 
     assert evaluate("replied_to", {"email_id": "e1"}, env, None) is True
     assert result.confirm_count == 0
+    assert result.rules_fired == []
 
 
 def test_run_b3_handles_planning_failure_without_crashing():

@@ -60,6 +60,12 @@ class RunResult:
     # supplied client is cache-wrapped; 0/0 if it isn't.
     cache_hits: int = 0
     cache_misses: int = 0
+    # Deduplicated, sorted policy rule codes (e.g. ["P1", "P6"]) that
+    # produced a CONFIRM or DENY verdict on any side-effecting call in this
+    # run — observability only, no effect on any decision. Always empty
+    # for B0/B1 (no policy engine) and for B2 (policy engine present but
+    # not enforced, so evaluate_call is never reached).
+    rules_fired: list[str] = field(default_factory=list)
 
 
 def run_b0(env: Environment, user_request: str, llm: LLMClient) -> RunResult:
