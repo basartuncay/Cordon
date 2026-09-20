@@ -87,21 +87,21 @@ request before ever reading attacker content, mostly just doesn't
 construct a plan that performs the attacker's injected goal in the first
 place, so P1–P5 never get a live chance to catch or miss anything. B0's
 two real successes (`a7_003`, a poisoned-summary read-only attack, and
-`a9_001`, an adaptive write attack) are the only cases in 320
-scenario-runs where naturalistic prompt injection actually worked against
-this model.
+`a9_001`, an adaptive write attack) are the only cases in 240 independent
+scenario-runs (B0, B1, B2; B3 replays B2's cached LLM calls) where
+naturalistic prompt injection actually worked against this model.
 
 **This is exactly why `evals/worst_case.py` exists and is the more
 informative number for the policy engine specifically** — see the table
 below. It synthesizes a plan that *does* attempt the attacker's exact
 goal (no LLM call, no reliance on the planner being fooled) and asks only
 "if a planner/quarantine compromise got this far, does the policy engine
-alone still stop it?" There, the difference is stark: 15/37 blocked under
+alone still stop it?" There, the difference is stark: 22/37 blocked under
 default auto-deny vs 37/37 succeeding once policy is off or a human
 rubber-stamps every confirmation. Read the real-run numbers as "how often
 does a real Haiku planner get fooled at all" (rarely, on this corpus) and
 the worst-case numbers as "if it does get fooled, does the last line of
-defense hold" (about 40% of write-tier attacks, deterministically).
+defense hold" (about 60% of write-tier attacks, deterministically).
 
 ## Per-category ASR (primary; every category is read/write-mixed except
 A10, which is entirely write-tier — see `A7`/`A9` for the only categories
@@ -131,11 +131,11 @@ resistance measured above.
 
 | Condition | Attacks succeeded |
 |---|---|
-| B3, confirm=deny (default) | **15/37** blocked → 22/37 = 59.5% still succeeded |
+| B3, confirm=deny (default) | **22/37** blocked (59.5%) → 15/37 = 40.5% still succeeded |
 | B3, confirm=approve | 37/37 = 100% succeeded (P1–P4 only ever gate via CONFIRM, never a hard DENY, for these predicate shapes) |
 | B2 (policy off, ablation) | 37/37 = 100% succeeded |
 
-15/37 blocked under default auto-deny is the policy engine's real,
+22/37 blocked under default auto-deny is the policy engine's real,
 measured contribution *given a compromised planner/quarantine* — the
 number that matters for "how bad is it if the first line of defense
 fails," as opposed to the near-0% real-run ASR above, which mostly
@@ -242,18 +242,19 @@ budgets):
   retrying with a different query or asking for clarification. B0/B1, by
   contrast, see every tool result in-context and can revise their next
   call — which is very likely why B0/B1's benign utility (87.5%) is
-  measurably higher than B2/B3's (56.2%) on this run, independent of any
-  attack: 7/16 B2/B3 benign failures were clean executions that just
-  didn't do the right thing, not errors. That utility gap is the
+  suggestively higher than B2/B3's (56.2%) on this run (95% CIs overlap:
+  n=16), independent of any attack: 7/16 B2/B3 benign failures were clean
+  executions that just didn't do the right thing, not errors. That
+  utility gap is the
   architecture's real, measured cost, not a bug.
 - **Auto-deny (this run's default `CORDON_CONFIRM_MODE`) behaves more
   safely than a real user would.** `AutoDenyDecider` rejects every
   CONFIRM-tier action unconditionally, which is why B3-deny's write-tier
-  worst-case blocked rate (15/37) is a ceiling, not a realistic estimate —
+  worst-case blocked rate (22/37) is a ceiling, not a realistic estimate —
   a real human, shown the same confirmation prompts repeatedly for a
   session with several legitimate write requests, would very plausibly
   approve some fraction out of habituation or insufficient scrutiny of the
-  argument summary, pushing the real-world blocked rate below 15/37 and
+  argument summary, pushing the real-world blocked rate below 22/37 and
   the auto-approve row (0/37 blocked) is the other, equally real ceiling
   in the opposite direction. Neither auto-decider models actual human
   confirmation-fatigue behavior.
