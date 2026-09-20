@@ -108,7 +108,7 @@ groups:
 | Group | n | Worst-case blocked, P1-P5 | Worst-case blocked, P1-P6 |
 |---|---|---|---|
 | gap-variant (targets P6's area) | 6 | 2/6 = 33% | **6/6 = 100%** |
-| novel-surface (other surfaces) | 7 | 7/7 = 100% | 7/7 = 100% (unchanged — P1/P3/P4 already covered it) |
+| novel-surface (tests P1-P4 implementation coverage) | 7 | 7/7 = 100% | 7/7 = 100% (unchanged — P1/P3/P4 already covered it) |
 
 Read the 2/6 → 6/6 jump as **"the implementation matches its own
 specification,"** not as an independent test generalizing to unknown
@@ -119,6 +119,20 @@ anticipated. n=15 is small either way — treat this as a directional
 result, not an estimate (see `docs/results-holdout.md`'s own CI-by-CI
 caveats).
 
+**Worst-case framework's structural limits** (full detail in
+`docs/results-holdout.md`): the framework taints exactly one argument
+per scenario, always the one the predicate itself checks — so (a)
+gap-variant can only ever test cases P6's own definition already
+covers, and (b) novel-surface's 7/7-blocked result is close to
+tautological: every novel-surface `attacker_goal` names a recipient,
+event id, attendee, or start time, and the framework always taints
+*that* value, landing in exactly the argument P1/P3/P4 already check.
+It cannot represent an attack where injected content influences the
+planner's *decision* to act on an already-trusted, literal value — the
+decision-level manipulation gap-variant/P6 actually targets. Read
+"novel-surface" as regression coverage for P1-P4's implementation, not
+evidence Cordon generalizes to novel attack surfaces.
+
 ## Limitations
 
 - Small corpus and a single run per system; confidence intervals are wide.
@@ -127,7 +141,7 @@ caveats).
 - Auto-deny is safer than a real user would be; auto-approve is the opposite extreme. Neither models confirmation fatigue.
 - No real Gmail/Calendar mode, no AgentDojo adapter.
 - **(v0.2)** The holdout corpus is n=15, one run, and its author knew P6's specification (wrote it) and the documented gaps — smaller and considerably less independent than an ideal red team; only the implementer was kept from seeing the resulting attacks while writing P6's code (see above).
-- **(v0.2)** P6 deliberately does not gate CONTACT-trust content — a compromised contact account is a known, accepted gap (`docs/threat-model.md`), not something P6 tries to close. Widening it to CONTACT would gate most ordinary replies to real contacts.
+- **(v0.2)** P6 deliberately does not gate CONTACT-trust content — a compromised contact account is a known, accepted gap (`docs/threat-model.md`), not something P6 tries to close. Widening it to CONTACT would gate most ordinary replies to real contacts. **Not yet measured** — neither corpus so far includes a scenario built specifically to quantify how often such content would go through unchecked (see `docs/results.md`/`docs/results-holdout.md`'s own notes on this).
 - **(v0.2)** P6 adds a fourth confirmation-worthy rule on top of P1-P5's existing ones; on both corpora tested so far it added zero *new* real-run confirm prompts, but that's a property of these two specific corpora + this specific model's behavior, not a guarantee it never will on a different one.
 
 ## Project status and future work
