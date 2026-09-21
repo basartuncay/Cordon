@@ -6,6 +6,14 @@ A CaMeL-inspired mail & calendar agent prototype in which untrusted email conten
 
 > **Status: research prototype.** Runs against an in-memory mock mailbox and calendar only (`*.example` domains). Real Gmail/Calendar access is **not implemented**. This is not production security software and it does not "solve" prompt injection.
 
+## Key findings (v0.1 to v0.2.1, Claude Haiku 4.5, mock environment)
+
+1. **Real model runs did not show a before/after improvement.** The undefended baseline (B0) was fooled by 2 of 64 attacks on the main corpus and 0 of 15 on the holdout corpus. Most of the measured protection comes from planner isolation, not from the policy engine.
+2. **The policy engine's evidence is the worst-case analysis** (assume the model was completely fooled): P1-P5 block 22/37 write-tier attacks on the main corpus and P1-P6 block 33/37. This shows the mechanism works for the cases it was written for. It is not a measurement against an adaptive attacker (see the worst-case limits section).
+3. **There is a utility cost.** Benign task success dropped from 14/16 (B0, B1) to 9/16 (B2, B3), mainly because a fixed one-shot plan cannot retry or ask for clarification. The cost of P6 specifically is **not** established: in a 10-task follow-up only 1 new confirmation prompt appeared, but 5 of the 10 tasks never reached a write step because of small-model failures.
+4. **Known open gap:** content planted by a compromised *contact* account and relayed to an allowlisted recipient is not gated by any rule (3/4 scenarios unblocked in worst-case, 1/4 in the real pipeline).
+5. **Everything is small and self-authored:** 80 + 15 + 14 scenarios, one run each, one model family, scenarios written by the same model family as the policy. Results quantify specific mechanisms, not general rates.
+
 ## What this is, and what it isn't
 
 This is **not novel research**. Prior art includes [AgentDojo](https://arxiv.org/abs/2406.13352) (a benchmark with an email/calendar suite), [CaMeL](https://arxiv.org/abs/2503.18813) (Google DeepMind's privileged/quarantined design with capabilities) and Simon Willison's [Dual LLM pattern](https://simonwillison.net/2023/Apr/25/dual-llm-pattern/).
@@ -188,7 +196,7 @@ held.
 
 **Done (v0.2.1):** measured (never adjusted) P6's real cost and the CONTACT-gap's size, on two small scenario sets (`evals/corpus/p6cost`, 10 benign tasks; `evals/corpus/contact-gap`, 4 attacks) authored by the same Claude.ai session that wrote P6's specification and the holdout corpus, predictions pre-registered before any real-model run (tag `v0.2.1-prereg`); added per-scenario policy-rule observability (`rules_fired`) to the result JSON, with a regression proof that it changed no existing decision; a generalized `make corpus-check DIR=...` validator for any non-holdout corpus directory. Written up in `docs/results-p6cost.md` and `docs/results-contact-gap.md`.
 
-**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on any corpus; a fully independent red team or a fully independent CONTACT-gap/P6-cost measurement (both the holdout corpus and the v0.2.1 scenario sets were authored by a Claude.ai session that knew P6's specification and, for the holdout/`gap-variant` case, deliberately targeted it — only the implementer was kept from seeing the resulting attacks, which is a narrower and weaker separation than genuine independence).
+**Not done:** an AgentDojo adapter (M4, stretch); a real Gmail/Calendar mode (OAuth, read-only + draft scopes); any model besides Claude Haiku 4.5; more than one run per baseline on any corpus; a fully independent red team or a fully independent CONTACT-gap/P6-cost measurement (both the holdout corpus and the v0.2.1 scenario sets were authored by a Claude.ai session that knew P6's specification and, for the holdout/`gap-variant` case, deliberately targeted it — only the implementer was kept from seeing the resulting attacks, which is a narrower and weaker separation than genuine independence); a scripted faithful-plan measurement of benign confirmation rates (P1/P4/P6 friction independent of small-model reliability).
 
 **Plausible next steps**, roughly in order of how directly they'd close a documented gap:
 
