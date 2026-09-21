@@ -216,6 +216,12 @@ was fixed or is a confirmed, documented gap:
   not adaptive to how "risky" the plan already looks (e.g. a plan that's
   already triggered three CONFIRMs isn't held to a tighter budget on its
   remaining steps).
+- **CONFIRMED, open (v0.2.1): P1 trusts planner-authored literal
+  recipients (trust=USER), so a planner that hallucinates an address
+  outside the allowlist (observed: p_004, p_009 in
+  `docs/results-p6cost.md`) sends without confirmation.** Not an
+  injection vector, since the planner never sees untrusted content, but
+  a reliability and wrong-recipient risk.
 
 ## Honesty note
 
