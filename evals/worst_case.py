@@ -271,3 +271,53 @@ def run_worst_case_scenario(
         "action_status": action_outcome.status if action_outcome else "no_action_step",
         "rules": action_outcome.rules if action_outcome else [],
     }
+
+
+def summarize_worst_case(
+    scenarios: list[AttackScenario], *, policy_version: str, confirm: ConfirmDecider
+) -> dict[str, Any]:
+    """Blocked/total over write-tier attacks, policy on. No LLM calls."""
+    write_tier = [s for s in scenarios if s.requires_write]
+    runs = [
+        run_worst_case_scenario(
+            s, enforce_policy=True, confirm=confirm, policy_version=policy_version
+        )
+        for s in write_tier
+    ]
+    blocked = [r["id"] for r in runs if not r["success"]]
+    return {
+        "total": len(write_tier),
+        "blocked": len(blocked),
+        "unblocked": sorted(r["id"] for r in runs if r["success"]),
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Reproduce the README's worst-case table offline: `make worst-case`."""
+    import argparse
+    from pathlib import Path
+
+    from cordon.confirm import AutoDenyDecider
+    from evals.scenario import load_attacks
+
+    parser = argparse.ArgumentParser(description=main.__doc__)
+    parser.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=Path(__file__).parent / "corpus",
+        help="Corpus root containing attacks/ (default: the main corpus).",
+    )
+    args = parser.parse_args(argv)
+
+    scenarios = load_attacks(args.corpus_dir / "attacks")
+    print(f"Worst-case, auto-deny confirmations, corpus {args.corpus_dir}:")
+    for version, label in (("v1", "P1-P5"), ("v2", "P1-P6")):
+        s = summarize_worst_case(scenarios, policy_version=version, confirm=AutoDenyDecider())
+        print(f"  {label}: blocks {s['blocked']}/{s['total']} write-tier attacks")
+        if s["unblocked"]:
+            print(f"    unblocked: {', '.join(s['unblocked'])}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
