@@ -1,18 +1,25 @@
 [project]
 name = "cordon"
-version = "0.1.0"
-description = "A CaMeL-inspired agent for Gmail/Calendar resistant to prompt injection, with provenance tracking and a deterministic policy engine."
+version = "0.2.2"
+description = "Research prototype: a CaMeL-inspired mail & calendar agent (mock environment) with provenance tracking, a deterministic policy engine, and an honest prompt-injection evaluation."
 readme = "README.md"
 license = "MIT"
 authors = [
     { name = "Basar Tuncay" }
 ]
 requires-python = ">=3.12"
+keywords = ["prompt-injection", "llm-security", "agents", "camel", "evaluation"]
+
 dependencies = [
     "anthropic>=1.7.0",
     "pydantic>=2.7",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/basartuncay/Cordon"
+Results = "https://github.com/basartuncay/Cordon/blob/main/docs/results.md"
+"Threat model" = "https://github.com/basartuncay/Cordon/blob/main/docs/threat-model.md"
 
 [dependency-groups]
 dev = [

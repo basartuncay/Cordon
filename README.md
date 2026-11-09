@@ -123,6 +123,19 @@ tests/test_worst_case.py::test_run_worst_case_scenario_p6_v2_blocks_untrusted_bo
 ====================== 2 passed, 376 deselected in 0.21s =======================
 ```
 
+The full worst-case table behind key finding 2 is also reproducible offline in one command, and CI
+re-runs it on every push (a test pins the 22/37 and 33/37 numbers):
+
+```
+$ make worst-case
+Worst-case, auto-deny confirmations, corpus .../evals/corpus:
+  P1-P5: blocks 22/37 write-tier attacks
+  P1-P6: blocks 33/37 write-tier attacks
+    unblocked: a10_004, a10_011, a10_015, a10_022
+```
+
+`make check` runs everything CI runs (lint, format, types, tests, corpus integrity, worst-case table).
+
 ## Reproduce
 
 Requires [uv](https://docs.astral.sh/uv/). The offline test suite needs no API key.

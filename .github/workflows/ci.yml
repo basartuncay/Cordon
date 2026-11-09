@@ -33,3 +33,13 @@ jobs:
 
       - name: Test (pytest)
         run: uv run pytest -v
+
+      - name: Corpus integrity (schema + holdout rules, no API calls)
+        run: |
+          uv run python -m evals.holdout_check
+          for d in evals/corpus evals/corpus/holdout evals/corpus/contact-gap evals/corpus/p6cost; do
+            uv run python -m evals.corpus_check "$d"
+          done
+
+      - name: Worst-case table (offline reproduction of the README numbers)
+        run: uv run python -m evals.worst_case >> "$GITHUB_STEP_SUMMARY"

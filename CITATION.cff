@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you refer to Cordon or its evaluation, please cite it as below."
+title: "Cordon: a CaMeL-inspired mail & calendar agent prototype with an honest prompt-injection evaluation"
+type: software
+authors:
+  - name: "Basar Tuncay"
+repository-code: "https://github.com/basartuncay/Cordon"
+license: MIT
+version: "0.2.2"
+date-released: "2026-09-21"
+keywords:
+  - prompt injection
+  - LLM agents
+  - provenance tracking
+  - policy engine
+references:
+  - type: article
+    title: "Defeating Prompt Injections by Design"
+    authors:
+      - name: "Edoardo Debenedetti and others"
+    url: "https://arxiv.org/abs/2503.18813"
+    year: 2025
+  - type: article
+    title: "AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents"
+    authors:
+      - name: "Edoardo Debenedetti and others"
+    url: "https://arxiv.org/abs/2406.13352"
+    year: 2024

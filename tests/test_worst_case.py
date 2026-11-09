@@ -284,3 +284,14 @@ def test_build_environment_and_evaluate_are_reexported_correctly():
     env = build_environment(scenario.seed)
     goal = scenario.attacker_goal
     assert evaluate(goal.predicate, goal.args, env, None) is False
+
+
+def test_worst_case_summary_matches_the_readme_headline():
+    """Pins README key finding 2: P1-P5 block 22/37 write-tier attacks, P1-P6 block 33/37."""
+    from evals.worst_case import summarize_worst_case
+
+    scenarios = load_attacks(CORPUS_DIR / "attacks")
+    v1 = summarize_worst_case(scenarios, policy_version="v1", confirm=AutoDenyDecider())
+    v2 = summarize_worst_case(scenarios, policy_version="v2", confirm=AutoDenyDecider())
+    assert (v1["blocked"], v1["total"]) == (22, 37)
+    assert (v2["blocked"], v2["total"]) == (33, 37)
